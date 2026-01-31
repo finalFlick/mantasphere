@@ -433,7 +433,16 @@
         let enemies = [];
         let projectiles = [];
         let xpGems = [];
+        let hearts = [];  // NEW: Health pickups
         let particles = [];
+        let obstacles = [];  // NEW: Store obstacles for collision
+        
+        // Trail system (ring buffer for performance)
+        const TRAIL_MAX = 25;
+        const TRAIL_LIFETIME = 20;
+        let trailPool = [];
+        let trailIndex = 0;
+        let lastTrailPos = null;
         
         // Input state
         const keys = {};
@@ -449,6 +458,14 @@
         let dashDirection = new THREE.Vector3();
         let lastDamageTime = 0;
         const DAMAGE_COOLDOWN = 500; // ms between damage ticks
+        
+        // Bounce system
+        const BOUNCE_FACTORS = [0.4, 0.15];  // 1st bounce 40%, 2nd bounce 15%
+        
+        // Heart drop settings
+        const HEART_DROP_CHANCE = { normal: 0.03, elite: 0.10, boss: 1.0 };
+        const HEART_HEAL = { normal: 15, elite: 25, boss: 50 };
+        const HEART_TTL = 600;  // ~10 seconds at 60fps
         
         // Upgrades available
         const upgrades = [
@@ -512,6 +529,9 @@
             
             // Add some obstacles
             createObstacles();
+            
+            // Initialize trail pool
+            initTrailPool();
 
             // Event listeners
             document.addEventListener('keydown', (e) => keys[e.code] = true);
@@ -525,14 +545,16 @@
             document.addEventListener('pointerlockchange', () => {
                 isPointerLocked = document.pointerLockElement === renderer.domElement;
                 
-                // Show/hide pause indicator when pointer lock changes during gameplay
+                // Show/hide pause indicator and ACTUALLY pause when pointer lock changes
                 const pauseIndicator = document.getElementById('pause-indicator');
                 const upgradeMenu = document.getElementById('upgrade-menu');
                 const gameOverScreen = document.getElementById('game-over');
                 
-                if (gameState.running && !gameState.paused && 
+                if (gameState.running && 
                     upgradeMenu.style.display !== 'block' && 
                     gameOverScreen.style.display !== 'block') {
+                    // Actually pause/unpause the game
+                    gameState.paused = !isPointerLocked;
                     pauseIndicator.style.display = isPointerLocked ? 'none' : 'block';
                 }
             });
@@ -632,9 +654,13 @@
             player.bodyMaterial = bodyMaterial;
             player.velocity = new THREE.Vector3();
             player.isGrounded = true;
+            player.bounceCount = 0;
+            player.wasInAir = false;
         }
 
         function createObstacles() {
+            obstacles = [];  // Reset obstacles array
+            
             const obstacleMaterial = new THREE.MeshStandardMaterial({ 
                 color: 0x4a4a6a,
                 roughness: 0.7
@@ -642,9 +668,10 @@
             
             // Create random platforms and obstacles
             for (let i = 0; i < 20; i++) {
-                const size = 2 + Math.random() * 4;
+                const sizeX = 2 + Math.random() * 4;
+                const sizeZ = 2 + Math.random() * 4;
                 const height = 0.5 + Math.random() * 2;
-                const geometry = new THREE.BoxGeometry(size, height, size);
+                const geometry = new THREE.BoxGeometry(sizeX, height, sizeZ);
                 const obstacle = new THREE.Mesh(geometry, obstacleMaterial);
                 
                 obstacle.position.x = (Math.random() - 0.5) * 80;
@@ -653,10 +680,20 @@
                 obstacle.castShadow = true;
                 obstacle.receiveShadow = true;
                 
+                // Store collision data (AABB in XZ plane)
+                obstacle.collisionData = {
+                    minX: obstacle.position.x - sizeX / 2,
+                    maxX: obstacle.position.x + sizeX / 2,
+                    minZ: obstacle.position.z - sizeZ / 2,
+                    maxZ: obstacle.position.z + sizeZ / 2,
+                    height: height
+                };
+                
                 scene.add(obstacle);
+                obstacles.push(obstacle);
             }
 
-            // Create some ramps
+            // Create some ramps (no collision for simplicity)
             for (let i = 0; i < 5; i++) {
                 const geometry = new THREE.BoxGeometry(4, 0.5, 6);
                 const ramp = new THREE.Mesh(geometry, obstacleMaterial);
@@ -669,6 +706,52 @@
                 ramp.receiveShadow = true;
                 
                 scene.add(ramp);
+            }
+        }
+        
+        // Initialize trail pool (ring buffer)
+        function initTrailPool() {
+            const trailGeometry = new THREE.SphereGeometry(0.15, 6, 6);
+            const trailMaterial = new THREE.MeshBasicMaterial({
+                color: 0x44ffff,
+                transparent: true,
+                opacity: 0
+            });
+            
+            for (let i = 0; i < TRAIL_MAX; i++) {
+                const segment = new THREE.Mesh(trailGeometry.clone(), trailMaterial.clone());
+                segment.visible = false;
+                segment.life = 0;
+                scene.add(segment);
+                trailPool.push(segment);
+            }
+        }
+        
+        // Spawn trail segment using ring buffer
+        function spawnTrail(position) {
+            const segment = trailPool[trailIndex];
+            segment.position.copy(position);
+            segment.life = TRAIL_LIFETIME;
+            segment.visible = true;
+            segment.material.opacity = 0.7;
+            segment.scale.setScalar(1);
+            
+            trailIndex = (trailIndex + 1) % TRAIL_MAX;
+        }
+        
+        // Update trail segments
+        function updateTrail() {
+            for (const segment of trailPool) {
+                if (segment.life > 0) {
+                    segment.life--;
+                    const t = segment.life / TRAIL_LIFETIME;
+                    segment.material.opacity = t * 0.7;
+                    segment.scale.setScalar(0.5 + t * 0.5);
+                    
+                    if (segment.life <= 0) {
+                        segment.visible = false;
+                    }
+                }
             }
         }
 
@@ -725,11 +808,62 @@
             enemy.speed = speed;
             enemy.damage = damage;
             enemy.size = size;
+            enemy.baseSize = size;  // Store original size for shrink effect
             enemy.isBoss = isBoss;
+            enemy.isElite = isElite;
             enemy.xpValue = isBoss ? 20 : (isElite ? 5 : 1);
+            enemy.baseColor = color;
             
             scene.add(enemy);
             enemies.push(enemy);
+        }
+        
+        // Spawn health heart pickup
+        function spawnHeart(position, healAmount) {
+            // Create heart shape using two spheres
+            const heartGroup = new THREE.Group();
+            
+            const heartMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff4488,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            // Two spheres for heart top
+            const sphereGeo = new THREE.SphereGeometry(0.15, 8, 8);
+            const left = new THREE.Mesh(sphereGeo, heartMaterial);
+            left.position.set(-0.1, 0.1, 0);
+            heartGroup.add(left);
+            
+            const right = new THREE.Mesh(sphereGeo, heartMaterial.clone());
+            right.position.set(0.1, 0.1, 0);
+            heartGroup.add(right);
+            
+            // Cone for heart bottom
+            const coneGeo = new THREE.ConeGeometry(0.2, 0.3, 8);
+            const cone = new THREE.Mesh(coneGeo, heartMaterial.clone());
+            cone.position.y = -0.1;
+            cone.rotation.x = Math.PI;
+            heartGroup.add(cone);
+            
+            heartGroup.position.copy(position);
+            heartGroup.position.y = 0.5;
+            heartGroup.healAmount = healAmount;
+            heartGroup.bobOffset = Math.random() * Math.PI * 2;
+            heartGroup.ttl = HEART_TTL;
+            
+            scene.add(heartGroup);
+            hearts.push(heartGroup);
+        }
+        
+        // Get N nearest enemies for multi-shot targeting
+        function getNearestEnemies(count, maxRange = 30) {
+            return enemies
+                .map(e => ({ enemy: e, dist: player.position.distanceTo(e.position) }))
+                .filter(e => e.dist < maxRange)
+                .sort((a, b) => a.dist - b.dist)
+                .slice(0, count)
+                .map(e => e.enemy);
         }
 
         function shootProjectile() {
@@ -739,24 +873,17 @@
             if (now - lastShot < fireRate) return;
             lastShot = now;
             
-            // Find nearest enemy
-            let nearestEnemy = null;
-            let nearestDist = Infinity;
-            
-            for (const enemy of enemies) {
-                const dist = player.position.distanceTo(enemy.position);
-                if (dist < nearestDist && dist < 30) {
-                    nearestDist = dist;
-                    nearestEnemy = enemy;
-                }
-            }
-            
-            if (!nearestEnemy) return;
-            
             const projectileCount = Math.floor(gameState.stats.projectileCount);
-            const spreadAngle = projectileCount > 1 ? 0.3 : 0;
+            
+            // Smart targeting: get N nearest enemies
+            const targets = getNearestEnemies(projectileCount);
+            
+            if (targets.length === 0) return;
             
             for (let i = 0; i < projectileCount; i++) {
+                // Target enemy at index i, or wrap to nearest if not enough enemies
+                const target = targets[i % targets.length];
+                
                 const geometry = new THREE.SphereGeometry(0.15, 8, 8);
                 const material = new THREE.MeshBasicMaterial({ 
                     color: 0x44ffff,
@@ -768,15 +895,10 @@
                 projectile.position.copy(player.position);
                 projectile.position.y += 0.5;
                 
-                // Direction to enemy with spread
+                // Direction to this specific target
                 const direction = new THREE.Vector3()
-                    .subVectors(nearestEnemy.position, player.position)
+                    .subVectors(target.position, player.position)
                     .normalize();
-                
-                if (projectileCount > 1) {
-                    const angleOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
-                    direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), angleOffset);
-                }
                 
                 projectile.velocity = direction.multiplyScalar(gameState.stats.projectileSpeed);
                 projectile.damage = gameState.stats.damage;
@@ -850,6 +972,10 @@
                 dashDirection.copy(moveDir);
             }
             
+            // Store old position for collision
+            const oldX = player.position.x;
+            const oldZ = player.position.z;
+            
             if (isDashing) {
                 if (now - lastDash < 200) {
                     player.position.add(dashDirection.clone().multiplyScalar(0.5));
@@ -860,26 +986,78 @@
                 player.position.add(moveDir.multiplyScalar(gameState.stats.moveSpeed));
             }
             
+            // 2D XZ Collision with obstacles (per-axis resolution for sliding)
+            const playerRadius = 0.5;
+            for (const obs of obstacles) {
+                const c = obs.collisionData;
+                
+                // Check X axis collision
+                if (player.position.x + playerRadius > c.minX && 
+                    player.position.x - playerRadius < c.maxX &&
+                    oldZ + playerRadius > c.minZ && 
+                    oldZ - playerRadius < c.maxZ) {
+                    // Colliding on X, push out
+                    if (oldX <= c.minX) {
+                        player.position.x = c.minX - playerRadius;
+                    } else if (oldX >= c.maxX) {
+                        player.position.x = c.maxX + playerRadius;
+                    }
+                }
+                
+                // Check Z axis collision
+                if (player.position.x + playerRadius > c.minX && 
+                    player.position.x - playerRadius < c.maxX &&
+                    player.position.z + playerRadius > c.minZ && 
+                    player.position.z - playerRadius < c.maxZ) {
+                    // Colliding on Z, push out
+                    if (oldZ <= c.minZ) {
+                        player.position.z = c.minZ - playerRadius;
+                    } else if (oldZ >= c.maxZ) {
+                        player.position.z = c.maxZ + playerRadius;
+                    }
+                }
+            }
+            
             // Jumping
             if (keys['Space'] && player.isGrounded) {
                 player.velocity.y = 0.25;
                 player.isGrounded = false;
+                player.wasInAir = true;
+                player.bounceCount = 0;
             }
             
             // Gravity
             player.velocity.y -= 0.015;
             player.position.y += player.velocity.y;
             
-            // Ground collision
+            // Ground collision with bounce
             if (player.position.y < 1) {
                 player.position.y = 1;
-                player.velocity.y = 0;
-                player.isGrounded = true;
+                
+                // Bounce if was in air
+                if (player.wasInAir && player.bounceCount < BOUNCE_FACTORS.length) {
+                    const bounceFactor = BOUNCE_FACTORS[player.bounceCount];
+                    player.velocity.y = 0.25 * bounceFactor;
+                    player.bounceCount++;
+                } else {
+                    player.velocity.y = 0;
+                    player.isGrounded = true;
+                    player.wasInAir = false;
+                    player.bounceCount = 0;
+                }
             }
             
             // Arena bounds
             player.position.x = Math.max(-45, Math.min(45, player.position.x));
             player.position.z = Math.max(-45, Math.min(45, player.position.z));
+            
+            // Spawn trail if moving or in air
+            const isMoving = moveDir.length() > 0 || isDashing;
+            if ((isMoving || !player.isGrounded) && 
+                (!lastTrailPos || player.position.distanceTo(lastTrailPos) > 0.3)) {
+                spawnTrail(player.position.clone());
+                lastTrailPos = player.position.clone();
+            }
             
             // Update camera
             const cameraDistance = 8;
@@ -896,20 +1074,68 @@
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const enemy = enemies[i];
                 
-                // Move towards player
-                const direction = new THREE.Vector3()
-                    .subVectors(player.position, enemy.position)
-                    .normalize();
+                // Initialize enemy velocity if not exists
+                if (!enemy.velocityY) enemy.velocityY = 0;
+                if (!enemy.targetY) enemy.targetY = enemy.baseSize;
                 
-                enemy.position.add(direction.multiplyScalar(enemy.speed));
-                enemy.position.y = enemy.size; // Keep on ground
+                // Move towards player in XZ plane
+                const direction = new THREE.Vector3()
+                    .subVectors(player.position, enemy.position);
+                direction.y = 0;  // Only XZ movement
+                direction.normalize();
+                
+                const oldX = enemy.position.x;
+                const oldZ = enemy.position.z;
+                
+                enemy.position.x += direction.x * enemy.speed;
+                enemy.position.z += direction.z * enemy.speed;
+                
+                // Check if enemy is blocked by obstacle - if so, jump over
+                for (const obs of obstacles) {
+                    const c = obs.collisionData;
+                    const scaledSize = enemy.baseSize * enemy.scale.x;
+                    
+                    if (enemy.position.x + scaledSize > c.minX && 
+                        enemy.position.x - scaledSize < c.maxX &&
+                        enemy.position.z + scaledSize > c.minZ && 
+                        enemy.position.z - scaledSize < c.maxZ) {
+                        // Enemy overlapping obstacle - make them jump on top
+                        enemy.targetY = c.height + enemy.baseSize;
+                        if (enemy.velocityY <= 0) {
+                            enemy.velocityY = 0.15;  // Jump impulse
+                        }
+                    }
+                }
+                
+                // Apply gravity and vertical movement for enemies
+                enemy.velocityY -= 0.01;
+                enemy.position.y += enemy.velocityY;
+                
+                // Ground/obstacle collision
+                let groundY = enemy.baseSize;  // Default ground
+                for (const obs of obstacles) {
+                    const c = obs.collisionData;
+                    const scaledSize = enemy.baseSize * enemy.scale.x;
+                    if (enemy.position.x + scaledSize > c.minX && 
+                        enemy.position.x - scaledSize < c.maxX &&
+                        enemy.position.z + scaledSize > c.minZ && 
+                        enemy.position.z - scaledSize < c.maxZ) {
+                        groundY = Math.max(groundY, c.height + enemy.baseSize);
+                    }
+                }
+                
+                if (enemy.position.y < groundY) {
+                    enemy.position.y = groundY;
+                    enemy.velocityY = 0;
+                }
                 
                 // Bobbing animation
                 enemy.rotation.y += 0.05;
                 
-                // Check collision with player
+                // Check collision with player (use scaled size)
+                const scaledSize = enemy.baseSize * enemy.scale.x;
                 const distToPlayer = enemy.position.distanceTo(player.position);
-                if (distToPlayer < enemy.size + 0.5) {
+                if (distToPlayer < scaledSize + 0.5) {
                     const now = Date.now();
                     if (now - lastDamageTime > DAMAGE_COOLDOWN) {
                         takeDamage(enemy.damage);
@@ -932,20 +1158,55 @@
                 proj.position.add(proj.velocity);
                 proj.life--;
                 
-                // Check collision with enemies
+                // Check collision with enemies (use scaled size for hitbox)
                 let hit = false;
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const enemy = enemies[j];
+                    const scaledSize = enemy.baseSize * enemy.scale.x;
                     const dist = proj.position.distanceTo(enemy.position);
                     
-                    if (dist < enemy.size + 0.2) {
+                    if (dist < scaledSize + 0.2) {
                         enemy.health -= proj.damage;
                         spawnParticle(proj.position, 0xff4444, 3);
                         
+                        // Shrink enemy based on remaining health
+                        const healthPercent = Math.max(0, enemy.health / enemy.maxHealth);
+                        const minScale = 0.5;
+                        const newScale = minScale + (1 - minScale) * healthPercent;
+                        enemy.scale.setScalar(newScale);
+                        
+                        // Hit flash effect
+                        enemy.material.emissive.setHex(0xffffff);
+                        enemy.material.emissiveIntensity = 1;
+                        setTimeout(() => {
+                            if (enemy.material) {
+                                enemy.material.emissive.setHex(enemy.baseColor);
+                                enemy.material.emissiveIntensity = 0.3;
+                            }
+                        }, 50);
+                        
                         if (enemy.health <= 0) {
-                            // Enemy died
+                            // Enemy died - spawn XP
                             spawnXpGem(enemy.position, enemy.xpValue);
                             spawnParticle(enemy.position, 0xff6644, 10);
+                            
+                            // Heart drop chance
+                            let dropChance, healAmount;
+                            if (enemy.isBoss) {
+                                dropChance = HEART_DROP_CHANCE.boss;
+                                healAmount = HEART_HEAL.boss;
+                            } else if (enemy.isElite) {
+                                dropChance = HEART_DROP_CHANCE.elite;
+                                healAmount = HEART_HEAL.elite;
+                            } else {
+                                dropChance = HEART_DROP_CHANCE.normal;
+                                healAmount = HEART_HEAL.normal;
+                            }
+                            
+                            if (Math.random() < dropChance) {
+                                spawnHeart(enemy.position.clone(), healAmount);
+                            }
+                            
                             enemy.geometry.dispose();
                             enemy.material.dispose();
                             scene.remove(enemy);
@@ -965,6 +1226,66 @@
                     proj.material.dispose();
                     scene.remove(proj);
                     projectiles.splice(i, 1);
+                }
+            }
+        }
+        
+        // Update hearts with TTL
+        function updateHearts(delta) {
+            const time = Date.now() * 0.004;
+            
+            for (let i = hearts.length - 1; i >= 0; i--) {
+                const heart = hearts[i];
+                
+                // Bobbing and rotation
+                heart.position.y = 0.5 + Math.sin(time + heart.bobOffset) * 0.2;
+                heart.rotation.y += 0.03;
+                
+                // TTL countdown
+                heart.ttl--;
+                
+                // Fade out in last 60 frames
+                if (heart.ttl < 60) {
+                    const opacity = heart.ttl / 60;
+                    heart.children.forEach(child => {
+                        if (child.material) child.material.opacity = opacity * 0.9;
+                    });
+                }
+                
+                // Despawn if TTL expired
+                if (heart.ttl <= 0) {
+                    heart.children.forEach(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    });
+                    scene.remove(heart);
+                    hearts.splice(i, 1);
+                    continue;
+                }
+                
+                // Check pickup by player
+                const dist = heart.position.distanceTo(player.position);
+                
+                if (dist < gameState.stats.pickupRange) {
+                    // Move towards player
+                    const direction = new THREE.Vector3()
+                        .subVectors(player.position, heart.position)
+                        .normalize();
+                    heart.position.add(direction.multiplyScalar(0.25));
+                }
+                
+                if (dist < 1) {
+                    // Collect heart
+                    gameState.health = Math.min(gameState.health + heart.healAmount, gameState.maxHealth);
+                    spawnParticle(heart.position, 0xff4488, 8);
+                    
+                    heart.children.forEach(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    });
+                    scene.remove(heart);
+                    hearts.splice(i, 1);
+                    updateUI();
                 }
             }
         }
@@ -1196,18 +1517,34 @@
             projectiles.forEach(p => { p.geometry.dispose(); p.material.dispose(); scene.remove(p); });
             xpGems.forEach(g => { g.geometry.dispose(); g.material.dispose(); scene.remove(g); });
             particles.forEach(p => { p.geometry.dispose(); p.material.dispose(); scene.remove(p); });
+            hearts.forEach(h => { 
+                h.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+                scene.remove(h); 
+            });
             
             enemies = [];
             projectiles = [];
             xpGems = [];
             particles = [];
+            hearts = [];
+            
+            // Reset trail pool
+            trailPool.forEach(t => { t.visible = false; t.life = 0; });
+            trailIndex = 0;
+            lastTrailPos = null;
             
             // Reset pending level ups
             gameState.pendingLevelUps = 0;
             
-            // Reset player position
+            // Reset player position and state
             player.position.set(0, 1, 0);
             player.velocity.set(0, 0, 0);
+            player.isGrounded = true;
+            player.bounceCount = 0;
+            player.wasInAir = false;
             
             // Hide game over screen and pause indicator
             document.getElementById('game-over').style.display = 'none';
@@ -1263,7 +1600,9 @@
                 updateEnemies(delta);
                 updateProjectiles(delta);
                 updateXpGems(delta);
+                updateHearts(delta);
                 updateParticles(delta);
+                updateTrail();
                 
                 // Auto-shoot
                 shootProjectile();
