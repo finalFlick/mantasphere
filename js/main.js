@@ -20,7 +20,7 @@ import { PulseMusic } from './systems/pulseMusic.js';
 import { generateArena, updateHazardZones } from './arena/generator.js';
 
 import { initTrailPool, updateTrail, resetTrail } from './effects/trail.js';
-import { updateParticles } from './effects/particles.js';
+import { initParticlePool, updateParticles, resetParticles } from './effects/particles.js';
 
 import { 
     updateUI, 
@@ -43,6 +43,8 @@ import {
     hideBadgeCollection
 } from './ui/leaderboardUI.js';
 
+import { initRosterUI } from './ui/rosterUI.js';
+
 let lastUIUpdate = 0;
 
 function init() {
@@ -51,6 +53,7 @@ function init() {
     const playerInstance = createPlayer();
     setPlayerRef(playerInstance);
     initTrailPool();
+    initParticlePool();
     
     // Initialize persistent systems
     initBadges();
@@ -100,8 +103,29 @@ function init() {
         closeBadgesBtn.addEventListener('click', hideBadgeCollection);
     }
     
+    // Initialize character roster UI
+    initRosterUI();
+    
     // Update mastery display on start screen
     updateMasteryDisplay();
+    
+    // Start menu music on first user interaction (browser autoplay policy requires this)
+    const startScreen = document.getElementById('start-screen');
+    let menuMusicStarted = false;
+    
+    const tryStartMenuMusic = () => {
+        if (!menuMusicStarted && !gameState.running) {
+            PulseMusic.startMenuMusic();
+            menuMusicStarted = true;
+        }
+    };
+    
+    // Start music on any interaction with start screen
+    startScreen.addEventListener('click', tryStartMenuMusic);
+    startScreen.addEventListener('keydown', tryStartMenuMusic);
+    document.addEventListener('keydown', (e) => {
+        if (!gameState.running) tryStartMenuMusic();
+    }, { once: true });
     
     render();
 }
@@ -115,7 +139,8 @@ function startGame() {
     gameState.waveTimer = 0;
     setGameStartTime(Date.now());
     
-    // Start adaptive music
+    // Stop menu music and start adaptive arena music
+    PulseMusic.stopMenuMusic();
     PulseMusic.resume();
     PulseMusic.onArenaChange(1);
     PulseMusic.startMusicLoop();
@@ -127,6 +152,7 @@ function restartGame() {
     resetGameState();
     resetAllEntities(scene);
     resetTrail();
+    resetParticles();
     resetPlayer();
     resetInput();
     resetLastShot();
