@@ -139,9 +139,12 @@ behaviorText: 'What it does in gameplay'  // Green behavior hint
 - Config objects: `UPPER_SNAKE_CASE`
 
 **Performance:**
-- Reuse `THREE.Vector3` instances
+- Reuse `THREE.Vector3` instances (use tempVec3 from entities.js)
 - Use `.length = 0` to clear arrays
-- Pool frequently created objects
+- Pool frequently created objects (projectiles, particles, enemies)
+- Cache geometries by size - don't create new geometry per spawn
+- Share materials when color/properties match
+- Use delta time for all movement (never assume fixed framerate)
 
 ### 7. Common Patterns
 
@@ -221,6 +224,7 @@ python -m http.server 8000
 | `FEATURES.md` | Complete feature list with checkboxes |
 
 **Before committing changes:**
+- **Search for `TODO`, `FIXME`, `STUB`, empty function bodies** - Ask user to implement before committing
 - Update `docs/EPICS.md` if feature/epic status changed
 - Update `docs/PROJECT_STATE.md` if behavior or architecture changed
 - Update `FEATURES.md` if adding/completing features
@@ -242,7 +246,64 @@ python -m http.server 8000
 - Should be achievable by wave 6-8
 - Encourage specific build choices
 
-### 12. Don'ts
+### 12. PULSE Adaptive Music System
+
+The game uses a **procedural adaptive music system** (`js/systems/pulseMusic.js`). 
+All audio is synthesized via Web Audio API — **no audio files needed**.
+
+**Full design spec:** `docs/PULSE_MUSIC_SYSTEM.md`
+
+#### How It Works
+- Each arena has a unique **musical identity** (key, scale, tempo, timbre)
+- Music **layers build dynamically** based on enemy count and intensity
+- Enemy sounds are **pitched to the arena's key** (diegetic audio)
+- Filter cutoff responds to **player health** (low health = muffled)
+- Boss fights add **sub-bass, stabs, and chaos layers**
+
+#### Integration Points (already hooked into game loop)
+```javascript
+PulseMusic.onWaveStart(waveNum)      // Wave stinger
+PulseMusic.onWaveClear()             // Resolution chord
+PulseMusic.onBossStart(arenaId)      // Boss entrance stinger
+PulseMusic.onBossDefeat()            // Victory fanfare
+PulseMusic.onEnemySpawn(enemy)       // Enemy spawn sound
+PulseMusic.onEnemyDeath(enemy)       // Enemy death sound
+PulseMusic.onEnemyAttack(enemy)      // Enemy attack sound
+PulseMusic.onPlayerDamage(healthPct) // Damage stinger
+PulseMusic.onLevelUp()               // Level up chime
+PulseMusic.onShieldHit()             // Metallic ping (with spam prevention)
+PulseMusic.onShieldBreak()           // Impact + shatter
+PulseMusic.onBossExposed()           // Harmonic resolution
+PulseMusic.onTeleport(isAppearing)   // Directional whoosh
+PulseMusic.onBurrowWarning()         // Sub-bass rumble (~3s)
+PulseMusic.onBurrowEmerge()          // Explosive burst
+PulseMusic.onWallSpawn()             // FM zap
+PulseMusic.update(gameState, enemies, boss) // Called each frame
+```
+
+#### Adding New Sound Events
+When adding mechanics that need audio feedback:
+
+1. **Add a method to PulseMusic** (e.g., `onShieldBreak()`)
+2. **Pitch sounds to the arena key:**
+   ```javascript
+   const note = this.currentProfile.rootMidi + this.currentProfile.scaleIntervals[degree];
+   ```
+3. **Use existing sound generators:** `playStab()`, `playGlitch()`, `playLead()`, etc.
+4. **Call from game code:** `PulseMusic.onShieldBreak()`
+
+**DO NOT** add external audio files — the system synthesizes everything.
+
+#### Adaptive Parameters (automatic)
+| Game State | Musical Response |
+|------------|------------------|
+| Enemy count | Layer density (1-8 layers) |
+| Player health | Filter cutoff (muffled when low) |
+| Wave progress | Harmonic tension |
+| Boss phase | Tempo boost, extra layers |
+| Kill rate | Micro tempo variations |
+
+### 13. Don'ts
 
 - **DON'T** add npm dependencies
 - **DON'T** add a build system
@@ -251,8 +312,26 @@ python -m http.server 8000
 - **DON'T** make early arenas too long
 - **DON'T** make bosses pure damage sponges
 - **DON'T** forget to dispose geometries/materials
+- **DON'T** add external audio files (use PulseMusic system)
+- **DON'T** call functions without importing them first
+- **DON'T** ignore null/undefined return values
+- **DON'T** assume 60fps - always use delta time
+- **DON'T** add trigger functions without wiring their update functions
+- **DON'T** modify gameState.health directly (use takeDamage)
+- **DON'T** commit placeholder values that break loading
+- **DON'T** leave stale TODO comments after completing work
+- **DON'T** use console.log without DEBUG guard
+- **DON'T** use `Date.now()` for game logic timing (use frame counters)
+- **DON'T** access `children[]` by index (use named properties)
+- **DON'T** trust object references in setTimeout/async callbacks
+- **DON'T** write stub functions - always fully implement or don't add the code
+- **DON'T** commit code with TODOs or stubs without asking the user first
+- **DON'T** pollute global namespace with `window.functionName = ...` (use events or module exports)
+- **DON'T** recreate geometry every frame to animate (use scale/position/rotation transforms)
+- **DON'T** create caches without a clear function (memory grows unbounded across sessions)
+- **DON'T** expose debug UI without guarding with DEBUG flag
 
-## Quick Commands
+### 14. Quick Commands
 
 ```bash
 # Start local server
@@ -263,3 +342,303 @@ git add -A
 git commit -m "feat: description"
 git push
 ```
+
+### 15. Bug Prevention Checklist
+
+These rules prevent common issues discovered during code reviews.
+
+#### Memory Management
+- **Pool frequently spawned objects** (projectiles, particles)
+- **Cache shared geometries** - Don't create new `THREE.SphereGeometry` per spawn
+- **Share materials when possible** - Same color/properties = same material instance
+- **Dispose only non-shared resources** - Don't dispose cached/pooled geometries
+- **Clear caches on game reset** - Prevent unbounded memory growth across sessions
+- **Use transforms instead of recreating geometry** - Scale/position/rotation are free, geometry allocation is expensive
+
+Example cache with clear function:
+```javascript
+const geometryCache = new Map();
+
+function getCachedGeometry(key, createFn) {
+    if (!geometryCache.has(key)) {
+        geometryCache.set(key, createFn());
+    }
+    return geometryCache.get(key);
+}
+
+// MUST export and call on game reset!
+export function clearGeometryCache() {
+    for (const geometry of geometryCache.values()) {
+        geometry.dispose();
+    }
+    geometryCache.clear();
+}
+```
+
+Animate size changes with scale, NOT geometry recreation:
+```javascript
+// BAD - creates new geometry every frame (memory leak, GC pressure)
+function updateGrowingRing(ring, newRadius) {
+    ring.geometry.dispose();
+    ring.geometry = new THREE.RingGeometry(newRadius - 0.2, newRadius + 0.2, 32);
+}
+
+// GOOD - use scale transform (free operation)
+function updateGrowingRing(ring, growthScale) {
+    ring.scale.setScalar(growthScale);
+}
+```
+
+Example pooling pattern:
+```javascript
+// GOOD: Pooled projectiles
+const pool = [];
+const sharedGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+
+function getFromPool() {
+    for (const obj of pool) {
+        if (!obj.active) {
+            obj.active = true;
+            obj.visible = true;
+            return obj;
+        }
+    }
+    return pool[0]; // Reuse oldest if exhausted
+}
+```
+
+#### Import Verification
+- **Every function called must be imported** - Check imports match usage
+- **Test code paths that trigger imported functions** - Not just happy path
+- **When adding function calls, immediately add the import**
+
+#### Null Safety
+- **Always handle null/undefined returns** from functions
+- **Add guards before using returned values:**
+```javascript
+// GOOD
+const enemy = selectEnemy();
+if (!enemy) {
+    console.warn('[System] No valid enemy');
+    return;
+}
+
+// BAD - will crash if selectEnemy returns null
+const enemy = selectEnemy();
+enemy.health -= damage;
+```
+
+#### Delta Time (Frame-Rate Independence)
+- **All movement must use delta time** - Never assume 60fps
+- **Pass delta through update functions:**
+```javascript
+// GOOD
+function updateEnemy(delta) {
+    enemy.position.x += enemy.speed * delta;
+}
+
+// BAD - movement speed depends on framerate
+function updateEnemy() {
+    enemy.position.x += enemy.speed;
+}
+```
+
+#### Game Loop Timing
+- **NEVER use Date.now() for game logic** - Use frame counters instead
+- **All timers should be frame-based**, not wall-clock time
+- **Slow-mo and lag must affect ALL game timing consistently**
+```javascript
+// BAD - wall-clock time breaks during slow-mo/lag
+if (Date.now() - enemy.lastShot > 1000) { ... }
+
+// GOOD - frame-based, respects time scale
+enemy.shootTimer++;
+if (enemy.shootTimer >= enemy.shootCooldownFrames) { ... }
+```
+
+#### Error Boundaries
+- **Main game loop MUST have try/catch** - One error shouldn't crash the game
+- **NEVER silently swallow errors** - Always track and recover or fail gracefully
+- **Limit consecutive errors** - Stop the game if errors cascade
+```javascript
+// GOOD - tracks errors and recovers gracefully
+function animate() {
+    requestAnimationFrame(animate);
+    try {
+        updateGame(delta);
+        gameState._errorCount = 0; // Reset on success
+    } catch (error) {
+        console.error('[SPHERESTORM] Update error:', error);
+        gameState._errorCount = (gameState._errorCount || 0) + 1;
+        
+        if (gameState._errorCount <= 3) {
+            // Attempt recovery - reset to safe state
+            gameState.bossActive = false;
+            console.warn(`Recovered from error (${gameState._errorCount}/3)`);
+        } else {
+            // Too many errors - stop to prevent corruption
+            gameState.running = false;
+            gameOver();
+            return;
+        }
+    }
+    render();
+}
+
+// BAD - silently continues in potentially corrupted state
+try {
+    updateGame(delta);
+} catch (error) {
+    console.error(error); // Just logs and continues - data may be corrupted!
+}
+```
+
+#### Async Callback Safety
+- **Capture references before async operations** - Objects may be disposed
+- **Validate captured references inside callbacks**
+```javascript
+// BAD - player may be disposed before timeout fires
+setTimeout(() => {
+    player.material.color.set(0xff0000);
+}, 500);
+
+// GOOD - capture and validate
+const playerRef = player;
+setTimeout(() => {
+    if (playerRef && playerRef.parent) {
+        playerRef.material.color.set(0xff0000);
+    }
+}, 500);
+```
+
+#### Object Property Access
+- **Use named properties, not array indices** for child objects
+- **Assign references at creation time**
+```javascript
+// BAD - breaks if child order changes
+marker.children[0].material.opacity = 0.5;
+marker.children[1].scale.set(2, 2, 2);
+
+// GOOD - explicit named references
+marker.innerCircle = new THREE.Mesh(...);
+marker.outerRing = new THREE.Mesh(...);
+marker.add(marker.innerCircle);
+marker.add(marker.outerRing);
+// Later:
+marker.innerCircle.material.opacity = 0.5;
+```
+
+#### System Wiring
+- **trigger/update pairs must both be connected:**
+  - If you add `triggerSlowMo()`, also wire `updateSlowMo()` in game loop
+  - If you add `createTelegraph()`, also call `updateTelegraph()` and `cleanupTelegraph()`
+
+#### State Mutation Routing
+- **All damage must go through `takeDamage()`** - For combat stats tracking
+- **All XP must go through the pickup system** - For multipliers
+- **Never modify `gameState.health` directly** (except in `takeDamage`)
+
+#### Debug Logging
+- **Gate all console.log behind DEBUG flag:**
+```javascript
+import { DEBUG } from '../config/constants.js';
+if (DEBUG) console.log('[System] Message');
+```
+- **Keep console.warn for actual error conditions** - These should always log
+- **Rate-limit warnings that could spam** - Use a "warned" flag
+- **Warnings in update loops should fire once, not every frame**
+```javascript
+// BAD - spams console every frame
+if (budget > 0 && !enemy) {
+    console.warn('No affordable enemy');
+}
+
+// GOOD - warns once per occurrence
+if (budget > 0 && !enemy && !gameState.waveSpawnWarned) {
+    console.warn('No affordable enemy');
+    gameState.waveSpawnWarned = true;
+}
+```
+
+#### Debug Feature Guarding
+- **Hide debug UI when DEBUG=false** - Don't expose game internals to players
+- **Skip debug control setup when disabled** - Reduces attack surface
+```javascript
+// GOOD - debug button only visible when enabled
+const debugBtn = document.getElementById('debug-btn');
+if (debugBtn) {
+    if (DEBUG) {
+        debugBtn.addEventListener('click', showDebugMenu);
+    } else {
+        debugBtn.style.display = 'none';
+    }
+}
+
+// Only set up debug controls when enabled
+if (DEBUG) {
+    setupDebugControls();
+}
+```
+
+#### Module Communication
+- **NEVER expose functions via `window.functionName`** - Pollutes global namespace
+- **Use custom events for cross-module communication** when direct imports cause circular deps
+```javascript
+// BAD - exposes to console, players can cheat
+window.startAtArena = startAtArena;
+// Called from another module:
+window.startAtArena(6); // Skip to final arena
+
+// GOOD - event-based, no global exposure
+// In main.js:
+document.addEventListener('arenaSelect', (e) => {
+    if (e.detail?.arena) startAtArena(e.detail.arena);
+});
+
+// In hud.js:
+document.dispatchEvent(new CustomEvent('arenaSelect', { 
+    detail: { arena: arenaNum } 
+}));
+```
+
+#### Game Restart Cleanliness
+- **Reset ALL timing state on restart** - Prevents stale values affecting new games
+- **Clear caches on restart** - Prevents memory accumulation across sessions
+```javascript
+function restartGame() {
+    resetGameState();
+    resetAllEntities(scene);
+    
+    // Reset timing
+    lastFrameTime = 0;
+    
+    // Clear caches
+    clearEnemyGeometryCache();
+    clearGeometryCache();
+    
+    // ... rest of restart logic
+}
+```
+
+#### Feature Completeness
+- **NEVER write stub functions** - Always fully implement the feature
+- **If implementation is blocked, ask the user** before writing placeholder code
+- **If a feature isn't ready, don't add the code path at all** - No empty functions
+- **Before committing:** Search for `TODO`, `FIXME`, `STUB`, empty function bodies
+- **If TODOs or stubs are found:** Ask the user if you should implement them before committing
+
+#### Placeholders
+- **Never commit placeholder values that break functionality:**
+  - NO: `integrity="sha384-PLACEHOLDER"`
+  - NO: `apiKey: 'TODO'`
+  - YES: Remove the attribute entirely, add TODO comment
+- **Test in browser before committing**
+
+#### TODO Hygiene
+- **Remove TODOs when work is complete**
+- **Update comments when wiring is done** - Change "TODO: Wire into X" to "Used by: X"
+
+#### CDN Security
+- **Add SRI hashes for external scripts** (when available)
+- **Use crossorigin="anonymous"** for CDN resources
+- **Document how to regenerate hashes** if library is updated
