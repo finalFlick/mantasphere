@@ -326,6 +326,7 @@ export const MenuScene = {
         
         // Position at the end of the grid (manta flies toward it)
         vortexGroup.position.set(0, 0, -18);
+        vortexGroup.rotation.z = Math.PI / 2;  // 90 degrees - rotate spiral pattern
         vortexGroup.scale.setScalar(1.8); // Scale for visibility
         this.blackHole = vortexGroup;
         this.scene.add(vortexGroup);
@@ -700,8 +701,8 @@ export const MenuScene = {
             // Subtle bob of the whole vortex group
             if (this.blackHole) {
                 this.blackHole.position.y = Math.sin(this.time * 0.8) * 0.2;
-                // Slight rotation for extra dynamism
-                this.blackHole.rotation.z = Math.sin(this.time * 0.3) * 0.05;
+                // Slight rotation for extra dynamism (added to base 90-degree rotation)
+                this.blackHole.rotation.z = Math.PI / 2 + Math.sin(this.time * 0.3) * 0.05;
             }
         }
         
