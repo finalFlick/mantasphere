@@ -90,9 +90,9 @@ export const PulseMusic = {
             this.compressor.attack.value = 0.003;
             this.compressor.release.value = 0.25;
             
-            // Music bus with filter
+            // Music bus with filter - lowered from 0.7 to 0.5 for less harsh sound
             this.musicBus = this.ctx.createGain();
-            this.musicBus.gain.value = 0.7;
+            this.musicBus.gain.value = 0.5;
             this.musicFilter = this.ctx.createBiquadFilter();
             this.musicFilter.type = 'lowpass';
             this.musicFilter.frequency.value = 8000;
@@ -324,6 +324,31 @@ export const PulseMusic = {
         }
     },
     
+    pause() {
+        this.stopMusicLoop();
+        this.isPaused = true;
+        // Stop all currently playing sounds for immediate silence
+        this.activeOscillators.forEach(osc => {
+            try { osc.stop(); } catch (e) {}
+        });
+        this.activeOscillators = [];
+        // Suspend audio context for immediate silence
+        if (this.ctx && this.ctx.state === 'running') {
+            this.ctx.suspend();
+        }
+    },
+    
+    unpause() {
+        if (this.isPaused && this.enabled && this.initialized) {
+            this.isPaused = false;
+            // Resume audio context first
+            if (this.ctx && this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
+            this.startMusicLoop();
+        }
+    },
+    
     stop() {
         this.stopMusicLoop();
         this.activeOscillators.forEach(osc => {
@@ -460,8 +485,9 @@ export const PulseMusic = {
         const scale = profile.scaleIntervals;
         const arpPattern = [0, 2, 4, 2];
         
-        const noteDuration = this.beatDuration / 4;
-        for (let i = 0; i < 16; i++) {
+        // Reduced from 16 notes to 8 per bar for less busy sound
+        const noteDuration = this.beatDuration / 2;
+        for (let i = 0; i < 8; i++) {
             const time = startTime + (i * noteDuration);
             const degree = arpPattern[i % arpPattern.length] + Math.floor(i / 4);
             const note = root + scale[degree % scale.length] + Math.floor(degree / scale.length) * 12;
@@ -516,9 +542,9 @@ export const PulseMusic = {
             gain.gain.setValueAtTime(0.4 * volumeMod, time);
             gain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
         } else if (type === 'hihat') {
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(8000, time);
-            gain.gain.setValueAtTime(0.1 * volumeMod, time);
+            osc.type = 'triangle';  // Softer than square
+            osc.frequency.setValueAtTime(5000, time);  // Reduced from 8000 for less harsh
+            gain.gain.setValueAtTime(0.06 * volumeMod, time);  // Reduced from 0.1
             gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
         }
         
@@ -778,7 +804,7 @@ export const PulseMusic = {
             time += 0.15;
         });
         
-        const chord = [0, 4, 7].map(d => profile.rootMidi + majorScale[d]);
+        const chord = [0, 4, 7].map(d => profile.rootMidi + majorScale[d % majorScale.length]);
         this.playChord(chord, now + 0.6, 1.5, profile);
     },
     
@@ -972,6 +998,205 @@ export const PulseMusic = {
     toggle() {
         this.setEnabled(!this.enabled);
         return this.enabled;
+    },
+    
+    // ============================================================================
+    // MENU MUSIC - Epic intro theme for start screen
+    // ============================================================================
+    
+    menuMusicLoopId: null,
+    isMenuMusicPlaying: false,
+    
+    startMenuMusic() {
+        if (!this.enabled || !this.initialized || this.isMenuMusicPlaying) return;
+        
+        this.resume(); // Ensure audio context is running
+        
+        this.isMenuMusicPlaying = true;
+        this.bpm = 90; // Slower, more epic tempo
+        this.beatDuration = 60 / this.bpm;
+        this.barDuration = this.beatDuration * 4;
+        
+        // D minor for dramatic tension
+        const rootMidi = this.ROOTS['D'];
+        const scale = this.SCALES.minor;
+        
+        this.nextBarTime = this.ctx.currentTime + 0.1;
+        
+        // Menu music tick - simplified epic music
+        this.menuMusicLoopId = setInterval(() => {
+            if (!this.ctx || !this.isMenuMusicPlaying) return;
+            
+            const now = this.ctx.currentTime;
+            
+            if (now >= this.nextBarTime - 0.1) {
+                this.scheduleMenuBar(this.nextBarTime, rootMidi, scale);
+                this.nextBarTime += this.barDuration;
+            }
+        }, 50);
+        
+        console.log('[PulseMusic] Menu music started');
+    },
+    
+    stopMenuMusic() {
+        if (this.menuMusicLoopId) {
+            clearInterval(this.menuMusicLoopId);
+            this.menuMusicLoopId = null;
+        }
+        this.isMenuMusicPlaying = false;
+        
+        // Fade out any active sounds
+        this.activeOscillators.forEach(osc => {
+            try { osc.stop(this.ctx.currentTime + 0.5); } catch (e) {}
+        });
+        this.activeOscillators = [];
+        
+        console.log('[PulseMusic] Menu music stopped');
+    },
+    
+    scheduleMenuBar(barTime, rootMidi, scale) {
+        if (!this.ctx) return;
+        
+        const beatDur = this.beatDuration;
+        
+        // Epic sub-bass drone on root
+        this.playMenuBass(rootMidi - 12, barTime, this.barDuration * 0.9);
+        
+        // Dramatic pad chord (D minor with added 9th for epicness)
+        const padNotes = [0, 3, 7, 14].map(i => rootMidi + (scale[i % scale.length] || i));
+        this.playMenuPad(padNotes, barTime, this.barDuration * 0.95);
+        
+        // Slow, powerful kick pattern - softer for ambient feel
+        this.playMenuKick(barTime);
+        this.playMenuKick(barTime + beatDur * 2);
+        
+        // Removed hi-hats - too harsh for ambient menu music
+        // Removed melody - simpler, more ambient feel
+    },
+    
+    playMenuBass(midi, time, duration) {
+        if (!this.ctx || !this.musicBus) return;
+        
+        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, time);
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.35, time + 0.1);  // Increased from 0.25
+        gain.gain.setValueAtTime(0.35, time + duration - 0.2);
+        gain.gain.linearRampToValueAtTime(0, time + duration);
+        
+        osc.connect(gain);
+        gain.connect(this.musicBus);
+        
+        osc.start(time);
+        osc.stop(time + duration + 0.1);
+        this.activeOscillators.push(osc);
+    },
+    
+    playMenuPad(notes, time, duration) {
+        if (!this.ctx || !this.musicBus) return;
+        
+        notes.forEach(midi => {
+            const freq = 440 * Math.pow(2, (midi - 69) / 12);
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, time);
+            
+            // Soft pad with slower attack/release for smoother ambient sound
+            gain.gain.setValueAtTime(0, time);
+            gain.gain.linearRampToValueAtTime(0.05, time + 0.5);  // Increased from 0.025
+            gain.gain.setValueAtTime(0.05, time + duration - 0.6);
+            gain.gain.linearRampToValueAtTime(0, time + duration);  // Longer release
+            
+            // Lower filter frequency for warmer, less harsh sound
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(800, time);  // Reduced from 1200
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.musicBus);
+            
+            osc.start(time);
+            osc.stop(time + duration + 0.1);
+            this.activeOscillators.push(osc);
+        });
+    },
+    
+    playMenuKick(time) {
+        if (!this.ctx || !this.musicBus) return;
+        
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.frequency.setValueAtTime(80, time);
+        osc.frequency.exponentialRampToValueAtTime(40, time + 0.15);
+        
+        // Menu kick - increased for audibility
+        gain.gain.setValueAtTime(0.4, time);  // Increased from 0.3
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+        
+        osc.connect(gain);
+        gain.connect(this.musicBus);
+        
+        osc.start(time);
+        osc.stop(time + 0.5);
+        this.activeOscillators.push(osc);
+    },
+    
+    playMenuHat(time, vol = 0.05) {
+        if (!this.ctx || !this.musicBus) return;
+        
+        // Use noise-like high frequency for hat
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+        
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(8000, time);
+        
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(7000, time);
+        
+        gain.gain.setValueAtTime(vol, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.musicBus);
+        
+        osc.start(time);
+        osc.stop(time + 0.1);
+        this.activeOscillators.push(osc);
+    },
+    
+    playMenuMelody(midi, time, duration) {
+        if (!this.ctx || !this.musicBus) return;
+        
+        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.12, time + 0.05);
+        gain.gain.setValueAtTime(0.12, time + duration * 0.7);
+        gain.gain.linearRampToValueAtTime(0, time + duration);
+        
+        osc.connect(gain);
+        gain.connect(this.musicBus);
+        
+        osc.start(time);
+        osc.stop(time + duration + 0.1);
+        this.activeOscillators.push(osc);
     }
 };
 

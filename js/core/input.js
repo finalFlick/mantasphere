@@ -1,10 +1,12 @@
 import { gameState } from './gameState.js';
+import { PulseMusic } from '../systems/pulseMusic.js';
 
 // Input state
 export const keys = {};
 export let cameraAngleX = 0;
 export let cameraAngleY = 0.3;
 export let isPointerLocked = false;
+let skipNextMouseMove = false; // Skip first mouse event after pointer lock to prevent camera jump
 
 export function setCameraAngleX(value) {
     cameraAngleX = value;
@@ -41,19 +43,43 @@ export function initInput(rendererElement) {
         const upgradeMenu = document.getElementById('upgrade-menu');
         const gameOverScreen = document.getElementById('game-over');
         
+        // Skip first mouse event after pointer lock to prevent camera jump
+        if (isPointerLocked) {
+            skipNextMouseMove = true;
+        }
+        
         if (gameState.running && 
             upgradeMenu.style.display !== 'block' && 
             gameOverScreen.style.display !== 'block') {
             gameState.paused = !isPointerLocked;
             pauseIndicator.style.display = isPointerLocked ? 'none' : 'block';
+            
+            // Pause/unpause music with game
+            if (gameState.paused) {
+                PulseMusic.pause();
+            } else {
+                PulseMusic.unpause();
+            }
         }
     });
 }
 
 function onMouseMove(event) {
     if (!isPointerLocked) return;
-    cameraAngleX -= event.movementX * 0.002;
-    cameraAngleY = Math.max(-0.5, Math.min(1, cameraAngleY + event.movementY * 0.002));
+    
+    // Skip first mouse event after pointer lock to prevent camera jump
+    if (skipNextMouseMove) {
+        skipNextMouseMove = false;
+        return;
+    }
+    
+    // Clamp movement to prevent large jumps from spurious events
+    const maxMovement = 50;
+    const mx = Math.max(-maxMovement, Math.min(maxMovement, event.movementX));
+    const my = Math.max(-maxMovement, Math.min(maxMovement, event.movementY));
+    
+    cameraAngleX -= mx * 0.002;
+    cameraAngleY = Math.max(-0.5, Math.min(1, cameraAngleY + my * 0.002));
 }
 
 export function resetInput() {

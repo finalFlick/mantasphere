@@ -109,7 +109,7 @@
         #badge-unlock-desc { font-size: 14px; opacity: 0.8; }
         
         /* Leaderboard Screen */
-        #leaderboard-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 280; color: white; }
+        #leaderboard-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 350; color: white; }
         #leaderboard-screen h2 { font-size: 36px; color: #ffdd44; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 3px; }
         #leaderboard-entries { width: 600px; max-height: 400px; overflow-y: auto; }
         .leaderboard-row { display: flex; justify-content: space-between; padding: 12px 20px; background: rgba(255,255,255,0.05); margin-bottom: 5px; border-radius: 8px; font-size: 16px; }
@@ -136,7 +136,7 @@
         #hs-submit:hover { transform: scale(1.05); }
         
         /* Badge Collection Screen */
-        #badge-collection { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 280; color: white; }
+        #badge-collection { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 350; color: white; }
         #badge-collection h2 { font-size: 36px; color: #ffdd44; margin-bottom: 30px; }
         #badge-collection-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 500px; }
         .collection-badge { padding: 20px; background: rgba(255,255,255,0.05); border-radius: 15px; text-align: center; transition: all 0.3s ease; }
@@ -147,6 +147,40 @@
         .collection-badge-desc { font-size: 12px; color: #888; }
         #close-badges { margin-top: 30px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
         #close-badges:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Character Roster Screen */
+        #roster-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 40px 20px; overflow-y: auto; }
+        #roster-screen h2 { font-size: 36px; color: #ffdd44; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 3px; }
+        .roster-tabs { display: flex; gap: 10px; margin-bottom: 25px; }
+        .roster-tab { padding: 12px 30px; font-size: 16px; background: transparent; border: 2px solid #444; border-radius: 8px; cursor: pointer; color: #888; font-weight: bold; transition: all 0.3s ease; }
+        .roster-tab:hover { border-color: #666; color: #aaa; }
+        .roster-tab.active { border-color: #ffdd44; color: #ffdd44; background: rgba(255, 221, 68, 0.1); }
+        #roster-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1200px; width: 100%; padding: 10px; }
+        .roster-card { padding: 20px; background: rgba(255,255,255,0.03); border: 2px solid #333; border-radius: 15px; transition: all 0.3s ease; }
+        .roster-card:hover { border-color: #555; transform: translateY(-3px); }
+        .roster-card.locked { opacity: 0.5; }
+        .roster-card.locked .roster-card-header { filter: grayscale(100%); }
+        .roster-card.boss { border-color: #ff4444; background: rgba(255, 68, 68, 0.05); }
+        .roster-card.boss:hover { border-color: #ff6666; }
+        .roster-card-header { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; }
+        .roster-sphere { width: 50px; height: 50px; border-radius: 50%; box-shadow: 0 0 15px currentColor; }
+        .roster-sphere.locked { background: #333 !important; box-shadow: none; }
+        .roster-card-title { flex: 1; }
+        .roster-name { font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 2px; }
+        .roster-tagline { font-size: 12px; color: #888; font-style: italic; }
+        .roster-arena-badge { font-size: 11px; color: #ffdd44; background: rgba(255, 221, 68, 0.15); padding: 3px 8px; border-radius: 4px; }
+        .roster-description { font-size: 13px; color: #aaa; line-height: 1.5; margin-bottom: 12px; min-height: 60px; }
+        .roster-behavior { font-size: 12px; color: #44ff44; background: rgba(68, 255, 68, 0.1); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #44ff44; }
+        .roster-locked-text { font-size: 13px; color: #666; text-align: center; padding: 20px 0; }
+        #roster-stats { display: flex; gap: 30px; margin-bottom: 20px; color: #888; font-size: 14px; }
+        .roster-stat { display: flex; align-items: center; gap: 8px; }
+        .roster-stat-value { color: #ffdd44; font-weight: bold; }
+        #close-roster { margin-top: 30px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        #close-roster:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Pause menu roster button */
+        #pause-roster-btn { margin-top: 20px; padding: 10px 25px; font-size: 14px; background: transparent; border: 2px solid #666; border-radius: 8px; cursor: pointer; color: #aaa; transition: all 0.3s ease; }
+        #pause-roster-btn:hover { border-color: #ffdd44; color: #ffdd44; }
     </style>
 </head>
 <body>
@@ -200,11 +234,11 @@
             <div class="badge-unlock-title">Badge Earned!</div>
             <div id="badge-unlock-icon">🏆</div>
             <div id="badge-unlock-name">Initiate</div>
-            <div id="badge-unlock-desc">Defeated The Pillar Guardian</div>
+            <div id="badge-unlock-desc">Defeated The Gatekeeper</div>
         </div>
         
         <!-- Menus -->
-        <div id="pause-indicator">PAUSED<p>Click anywhere to resume</p></div>
+        <div id="pause-indicator">PAUSED<p>Click anywhere to resume</p><button id="pause-roster-btn">View Roster</button></div>
         
         <div id="upgrade-menu">
             <h2>LEVEL UP!</h2>
@@ -247,6 +281,21 @@
             <button id="close-badges">Close</button>
         </div>
         
+        <!-- Character Roster Screen -->
+        <div id="roster-screen">
+            <h2>Character Roster</h2>
+            <div id="roster-stats">
+                <div class="roster-stat">Enemies Discovered: <span class="roster-stat-value" id="roster-enemies-discovered">0</span> / <span id="roster-enemies-total">8</span></div>
+                <div class="roster-stat">Bosses Defeated: <span class="roster-stat-value" id="roster-bosses-discovered">0</span> / <span id="roster-bosses-total">6</span></div>
+            </div>
+            <div class="roster-tabs">
+                <button class="roster-tab active" data-tab="enemies">Enemies</button>
+                <button class="roster-tab" data-tab="bosses">Bosses</button>
+            </div>
+            <div id="roster-grid"></div>
+            <button id="close-roster">Close</button>
+        </div>
+        
         <!-- Start Screen -->
         <div id="start-screen">
             <h1>SPHERESTORM</h1>
@@ -257,6 +306,7 @@
             <div class="start-buttons">
                 <button id="leaderboard-btn" class="secondary-btn">Leaderboard</button>
                 <button id="badges-btn" class="secondary-btn">Badges</button>
+                <button id="roster-btn" class="secondary-btn">Roster</button>
             </div>
             <div id="mastery-panel"></div>
             <div class="controls-info">
