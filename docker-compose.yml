@@ -1,5 +1,6 @@
 services:
-  spherestorm:
+  mantasphere:
+    image: ghcr.io/finalflick/mantasphere:latest
     build: .
     ports:
       - "8080:80"
