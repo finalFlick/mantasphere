@@ -1,6 +1,6 @@
 // Game Identity
 export const GAME_TITLE = 'Manta Sphere';
-export const VERSION = '0.1.0';  // Increment when deploying changes
+export const VERSION = '0.2.1';  // Semantic versioning - see VERSION file and .cursorrules
 export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_';
 
 // Debug Logging Configuration
