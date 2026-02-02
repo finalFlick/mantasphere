@@ -3,8 +3,26 @@ export const GAME_TITLE = 'Manta Sphere';
 export const VERSION = '0.1.0';  // Increment when deploying changes
 export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_';
 
+// Debug Logging Configuration
+// Level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'
+// Tags: Enable/disable logging per category
+export const DEBUG_CONFIG = {
+    level: 'info',
+    tags: {
+        WAVE: true,      // Wave lifecycle, modifiers, budgets
+        SPAWN: true,     // Enemy/school spawns, choreography
+        BOSS: true,      // Boss lifecycle, phases, retreat/return
+        SCORE: true,     // Bonuses, calculations
+        STATE: true,     // State machine transitions
+        SAFETY: true,    // Caps, pauses, invariant violations
+        PERF: false      // Performance metrics (noisy, off by default)
+    }
+};
+
+// Backward compatibility alias
+export const DEBUG = DEBUG_CONFIG.level !== 'silent';
+
 // Game constants
-export const DEBUG = true;  // Set to true for debug logging
 export const DAMAGE_COOLDOWN = 500;
 export const PLAYER_JUMP_VELOCITY = 0.4;
 export const PLAYER_GRAVITY = 0.018;
@@ -25,6 +43,7 @@ export const WAVE_STATE = {
     WAVE_CLEAR: 'WAVE_CLEAR',
     BOSS_INTRO: 'BOSS_INTRO',
     BOSS_ACTIVE: 'BOSS_ACTIVE',
+    BOSS_RETREAT: 'BOSS_RETREAT',  // NEW: Boss retreating after phase defeat
     BOSS_DEFEATED: 'BOSS_DEFEATED',
     ARENA_TRANSITION: 'ARENA_TRANSITION'
 };
@@ -84,6 +103,8 @@ export const ENEMY_CAPS = {
 export const THREAT_BUDGET = {
     costs: {
         grunt: { durability: 12, damage: 10, cognitive: 1 },
+        gruntTiny: { durability: 4, damage: 5, cognitive: 1 },  // 1-shot enemy, lower cost
+        gruntBig: { durability: 30, damage: 15, cognitive: 2 },  // 3-shot enemy, higher cost
         shielded: { durability: 50, damage: 12, cognitive: 2 },
         fastBouncer: { durability: 6, damage: 8, cognitive: 3 },
         splitter: { durability: 60, damage: 30, cognitive: 4 },
@@ -97,6 +118,14 @@ export const THREAT_BUDGET = {
         lesson: { total: 400, maxCognitive: 15 },
         integration: { total: 750, maxCognitive: 30 },
         exam: { total: 1250, maxCognitive: 40 }
+    },
+    // Arena-specific budget overrides (applied before arena scaling)
+    arenaBudgetOverrides: {
+        1: {
+            lesson: { total: 350 },      // Tiny only (1-shot targets, ~39 tiny puffers)
+            integration: { total: 550 }, // Tiny + Standard mix
+            exam: { total: 750 }         // All three sizes - pressure test
+        }
     },
     arenaScaling: { 1: 1.0, 2: 1.2, 3: 1.4, 4: 1.6, 5: 1.8, 6: 2.0 }
 };
@@ -150,8 +179,44 @@ export const WAVE_MODIFIERS = {
 
 // Cognitive load limits per arena
 export const COGNITIVE_LIMITS = {
-    maxTypesPerWave: { 1: 1, 2: 2, 3: 3, 4: 3, 5: 4, 6: 4 },
+    maxTypesPerWave: { 1: 3, 2: 3, 3: 3, 4: 3, 5: 4, 6: 4 },  // Arena 1: 3 types (gruntTiny, grunt, gruntBig)
     featuredTypeBonus: 2.0  // Lesson enemy gets double spawn weight
+};
+
+// School formation configuration (true leader/follower formations)
+export const SCHOOL_CONFIG = {
+    enabled: true,
+    // Wave-based frequency by arena (schools ramp up across waves)
+    chanceByWave: {
+        arena1: { 1: 0, 2: 0.10, 3: 0.25 },     // No schools Wave 1, rare Wave 2, more Wave 3
+        arena2: { 1: 0.05, 2: 0.15, 3: 0.20 },
+        default: { 1: 0.05, 2: 0.15, 3: 0.20 }
+    },
+    schoolSize: { min: 3, max: 6 },
+    formationSpacing: 1.5,        // Distance between followers in formation
+    formationTightness: 0.08,     // How quickly followers catch up (0-1, higher = tighter)
+    maxActiveSchools: 2,          // Safety cap - max schools alive at once
+    excludeTypes: ['shielded', 'splitter', 'waterBalloon', 'gruntBig'],  // Heavy enemies don't school
+    leaderDeathBehavior: 'promote',  // 'promote' first follower or 'disband'
+    spawnCooldownFrames: 60       // Minimum frames between school spawns (prevent back-to-back)
+};
+
+// Spawn choreography configuration (directional spawning)
+export const SPAWN_CHOREOGRAPHY = {
+    enabled: true,
+    // Choreography type per arena and wave
+    // 'random': default random spawning
+    // 'lane': all enemies from one direction (edge)
+    // 'pincer': enemies from two opposite edges
+    arena1: {
+        1: 'random',  // Wave 1: learning, random spawns
+        2: 'lane',    // Wave 2: lane flood from one direction
+        3: 'pincer'   // Wave 3: pincer from two directions
+    },
+    // Other arenas use random by default (can be extended)
+    edgeSpawnDistance: 40,   // How far from center to spawn (near arena edge)
+    edgeSpread: 25,          // Spread along the edge
+    directions: ['north', 'south', 'east', 'west']
 };
 
 // Death feedback tips

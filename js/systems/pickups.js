@@ -375,9 +375,6 @@ export function clearArenaPortal() {
  * Trigger the portal transition effect and set wave state
  */
 function triggerPortalTransition() {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pickups.js:378',message:'PORTAL TRANSITION TRIGGERED - Moving to next arena!',data:{currentWaveState:gameState.waveState,currentArena:gameState.currentArena},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     // Visual feedback
     triggerSlowMo(30, 0.3);
     triggerScreenFlash(0x00ffff, 20);
@@ -621,13 +618,7 @@ export function updateBossEntrancePortal() {
     const canEnterPortal = !portal.isFrozen && gameState.waveState === WAVE_STATE.BOSS_DEFEATED;
     if (canEnterPortal && player && player.position) {
         const dist = player.position.distanceTo(new THREE.Vector3(portal.position.x, player.position.y, portal.position.z));
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pickups.js:560',message:'Portal collision check',data:{isFrozen:portal.isFrozen,waveState:gameState.waveState,canEnter:canEnterPortal,playerDist:dist,threshold:VORTEX_COLLISION_RADIUS},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
-        // #endregion
         if (dist < VORTEX_COLLISION_RADIUS) {
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pickups.js:564',message:'TRIGGERING PORTAL TRANSITION',data:{playerPos:{x:player.position.x,z:player.position.z},portalPos:{x:portal.position.x,z:portal.position.z}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
-            // #endregion
             // Player entered unfrozen portal - trigger transition
             triggerPortalTransition();
             clearBossEntrancePortal();

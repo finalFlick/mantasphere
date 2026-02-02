@@ -4,7 +4,7 @@ import { enemies, obstacles, hazardZones, tempVec3, getCurrentBoss, setCurrentBo
 import { player } from './player.js';
 import { spawnSpecificEnemy, spawnSplitEnemy } from './enemies.js';
 import { BOSS_CONFIG, ABILITY_COOLDOWNS, ABILITY_TELLS } from '../config/bosses.js';
-import { DAMAGE_COOLDOWN, HEART_HEAL, BOSS_STUCK_THRESHOLD, BOSS_STUCK_FRAMES, PHASE_TRANSITION_DELAY_FRAMES, GAME_TITLE, PHASE2_CUTSCENE, PHASE3_CUTSCENE } from '../config/constants.js';
+import { DAMAGE_COOLDOWN, HEART_HEAL, BOSS_STUCK_THRESHOLD, BOSS_STUCK_FRAMES, PHASE_TRANSITION_DELAY_FRAMES, GAME_TITLE, PHASE2_CUTSCENE, PHASE3_CUTSCENE, WAVE_STATE } from '../config/constants.js';
 import { spawnParticle, spawnShieldBreakVFX, spawnBubbleParticle } from '../effects/particles.js';
 import { spawnXpGem, spawnHeart, spawnArenaPortal, unfreezeBossEntrancePortal } from '../systems/pickups.js';
 import { createHazardZone } from '../arena/generator.js';
@@ -13,6 +13,7 @@ import { showBossHealthBar, updateBossHealthBar, hideBossHealthBar, showExposedB
 import { markBossEncountered } from '../ui/rosterUI.js';
 import { createShieldBubble, createExposedVFX, updateExposedVFX, cleanupVFX, createSlamMarker, updateSlamMarker, createTeleportOriginVFX, createTeleportDestinationVFX, updateTeleportDestinationVFX, createEmergeWarningVFX, updateEmergeWarningVFX, createBurrowStartVFX, updateBurrowStartVFX, triggerSlowMo, triggerScreenFlash, createChargePathMarker, updateChargePathMarker, createHazardPreviewCircle, updateHazardPreviewCircle, createLaneWallPreview, updateLaneWallPreview, createPerchChargeVFX, updatePerchChargeVFX, createGrowthIndicator, updateGrowthIndicator, createSplitWarningVFX, updateSplitWarningVFX, createComboTether, updateComboTether, createComboLockInMarker, updateComboLockInMarker, createMinionTether, updateMinionTethers, createTetherSnapVFX, updateTetherSnapVFX, createChargeTrailSegment, updateChargeTrailSegment, createDetonationWarningVFX, updateDetonationWarningVFX, createTeleportDecoy, updateTeleportDecoy, createBlinkBarrageMarker, updateBlinkBarrageMarker, createVineZone, updateVineZone, createBurrowPath, updateBurrowPath, createFakeEmergeMarker, updateFakeEmergeMarker, createEnergyTransferVFX, createWallImpactVFX, updateWallImpactVFX } from '../systems/visualFeedback.js';
 import { PulseMusic } from '../systems/pulseMusic.js';
+import { log, logOnce, logThrottled, assert } from '../systems/debugLog.js';
 
 // Anti-stuck detection uses BOSS_STUCK_THRESHOLD and BOSS_STUCK_FRAMES from constants.js
 
@@ -581,7 +582,154 @@ export function spawnBoss(arenaNumber) {
     // Mark boss as encountered for roster
     markBossEncountered(arenaNumber);
     
+    // Arena 1 Boss Chase: Lock phase and set retreat threshold
+    if (arenaNumber === 1 && gameState.arena1ChaseState?.enabled) {
+        const chase = gameState.arena1ChaseState;
+        
+        // Lock boss to specific phase kit
+        boss.phase = chase.bossPhaseToSpawn;
+        boss.phaseLocked = true;  // Prevents auto phase transitions
+        
+        // Set retreat threshold (P1 = 66%, P2 = 33%, P3 = no retreat)
+        boss.retreatThreshold = chase.phaseThresholds[boss.phase] || 0;
+        boss.canRetreat = boss.phase < 3;  // P1 and P2 retreat, P3 dies
+        boss.isRetreating = false;
+        
+        // Restore persistent HP if returning from previous encounter
+        if (chase.persistentBossHealth !== null && chase.bossEncounterCount > 0) {
+            boss.health = chase.persistentBossHealth;
+        }
+        
+        // Entrance invulnerability
+        boss.entranceTimer = 0;
+        boss.entranceInvulnFrames = 60;  // 1 second
+        boss.canDamagePlayer = false;
+        
+        log('BOSS', 'spawn', {
+            phase: boss.phase,
+            hp: boss.health,
+            retreatThreshold: boss.retreatThreshold,
+            phaseLocked: boss.phaseLocked,
+            canRetreat: boss.canRetreat,
+            entranceInvuln: boss.entranceInvulnFrames
+        });
+    }
+    
     return boss;
+}
+
+// ==================== BOSS CHASE: RETREAT SYSTEM ====================
+// Initiate boss retreat when phase threshold is reached (Arena 1 chase mode)
+export function initiateRetreat(boss) {
+    if (!boss || boss.isRetreating) return;
+    
+    boss.isRetreating = true;
+    boss.invulnerable = true;  // Can't be damaged during retreat
+    boss.canDamagePlayer = false;  // Can't deal damage during retreat
+    boss.retreatAnimTimer = 0;
+    boss.retreatAnimDuration = 60;  // 1 second animation
+    boss.aiState = 'retreating';  // Override AI state
+    
+    // Save persistent HP for next encounter
+    if (gameState.arena1ChaseState) {
+        gameState.arena1ChaseState.persistentBossHealth = boss.health;
+    }
+    
+    // Visual feedback - phase cleared banner
+    const phaseNum = boss.phase;
+    showPhaseAnnouncement(phaseNum, 'PHASE CLEARED!');
+    
+    // Audio cue
+    PulseMusic.onBossPhaseChange?.(phaseNum);
+    
+    // Slow-mo for dramatic effect
+    triggerSlowMo(20, 0.3);
+    triggerScreenFlash(0x44ff44, 8);  // Green flash for victory
+    
+    // Retreat pulse VFX - expanding ring to signal wave transition
+    spawnRetreatPulse(boss.position.clone(), boss.baseColor);
+    
+    // Particle burst
+    spawnParticle(boss.position, boss.baseColor, 30);
+    
+    // Change wave state
+    gameState.waveState = WAVE_STATE.BOSS_RETREAT;
+    
+    log('BOSS', 'retreat_triggered', {
+        phase: phaseNum,
+        hp: boss.health,
+        waveState: 'BOSS_RETREAT'
+    });
+}
+
+// Spawn a retreat pulse VFX - expanding ring that signals boss retreat
+function spawnRetreatPulse(position, color) {
+    // VFX is not high-signal, remove verbose logging
+    
+    // Create expanding ring
+    const ringGeom = new THREE.RingGeometry(1, 2, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(ringGeom, ringMat);
+    ring.position.copy(position);
+    ring.position.y = 0.5;  // Just above ground
+    ring.rotation.x = -Math.PI / 2;  // Flat on ground
+    scene.add(ring);
+    
+    // Animate expansion
+    let frame = 0;
+    const maxFrames = 40;
+    
+    function animateRing() {
+        frame++;
+        const progress = frame / maxFrames;
+        
+        // Expand ring
+        ring.scale.setScalar(1 + progress * 8);
+        
+        // Fade out
+        ring.material.opacity = 0.8 * (1 - progress);
+        
+        if (frame < maxFrames) {
+            requestAnimationFrame(animateRing);
+        } else {
+            // Cleanup
+            scene.remove(ring);
+            ring.geometry.dispose();
+            ring.material.dispose();
+        }
+    }
+    
+    animateRing();
+}
+
+// Check if boss should retreat (called from damage handler)
+export function checkBossRetreat(boss) {
+    if (!boss || !boss.canRetreat || boss.isRetreating) return false;
+    
+    // Only retreat in Arena 1 chase mode
+    if (!gameState.arena1ChaseState?.enabled) return false;
+    
+    // Throttled: called on every damage
+    logThrottled('boss-retreat-check', 500, 'BOSS', 'retreat_check', {
+        hp: boss.health,
+        threshold: boss.retreatThreshold,
+        canRetreat: boss.canRetreat
+    });
+    
+    // Check if HP at or below retreat threshold
+    if (boss.health <= boss.retreatThreshold) {
+        // Floor HP at threshold (don't go below)
+        boss.health = Math.max(boss.health, boss.retreatThreshold);
+        initiateRetreat(boss);
+        return true;
+    }
+    
+    return false;
 }
 
 export function updateBoss() {
@@ -612,6 +760,19 @@ export function updateBoss() {
     
     const boss = currentBoss;
     boss.aiTimer++;
+    
+    // ==================== ARENA 1 CHASE: ENTRANCE INVULNERABILITY ====================
+    // Boss can't damage player during entrance animation
+    if (boss.entranceTimer !== undefined && boss.entranceTimer < boss.entranceInvulnFrames) {
+        boss.entranceTimer++;
+        boss.canDamagePlayer = false;
+        
+        // Re-enable damage after entrance period
+        if (boss.entranceTimer >= boss.entranceInvulnFrames) {
+            boss.canDamagePlayer = true;
+            log('SAFETY', 'entrance_complete', { canDamagePlayer: true });
+        }
+    }
     
     // ==================== PORCUPINEFISH INFLATION UPDATE ====================
     if (boss.isPorcupinefish) {
@@ -745,12 +906,29 @@ export function updateBoss() {
         }
     }
     
-    // Phase transitions (dramatic)
-    const healthPercent = boss.health / boss.maxHealth;
-    if (healthPercent < 0.33 && boss.phase < 3) {
-        triggerPhaseTransition(boss, 3);
-    } else if (healthPercent < 0.66 && boss.phase < 2) {
-        triggerPhaseTransition(boss, 2);
+    // Phase transitions (dramatic) - skip if phase-locked (Arena 1 chase mode)
+    if (!boss.phaseLocked) {
+        const healthPercent = boss.health / boss.maxHealth;
+        if (healthPercent < 0.33 && boss.phase < 3) {
+            triggerPhaseTransition(boss, 3);
+        } else if (healthPercent < 0.66 && boss.phase < 2) {
+            triggerPhaseTransition(boss, 2);
+        }
+    } else {
+        // [PhaseLock] Log when auto-phase would have triggered but was blocked
+        const healthPercent = boss.health / boss.maxHealth;
+        if ((healthPercent < 0.33 && boss.phase < 3) || (healthPercent < 0.66 && boss.phase < 2)) {
+            const wouldBePhase = healthPercent < 0.33 ? 3 : 2;
+            if (!boss._lastBlockedPhaseLog || boss._lastBlockedPhaseLog !== wouldBePhase) {
+                logOnce(`phase-blocked-${wouldBePhase}`, 'BOSS', 'phase_blocked', {
+                    healthPercent: parseFloat((healthPercent * 100).toFixed(0)),
+                    wouldBePhase,
+                    currentPhase: boss.phase,
+                    phaseLocked: boss.phaseLocked
+                });
+                boss._lastBlockedPhaseLog = wouldBePhase;
+            }
+        }
     }
     
     // Update phase transition timer (frame-based delay)
@@ -1004,8 +1182,8 @@ export function updateBoss() {
         boss.velocityY = 0;
     }
     
-    // Player collision (skip during cutscenes)
-    if (!gameState.cutsceneActive) {
+    // Player collision (skip during cutscenes or if boss can't damage player)
+    if (!gameState.cutsceneActive && boss.canDamagePlayer !== false) {
         const distToPlayer = boss.position.distanceTo(player.position);
         const effectiveSize = boss.size * boss.growthScale * boss.scale.x;
         if (distToPlayer < effectiveSize + 0.5) {
@@ -1722,10 +1900,6 @@ export { BOSS6_CYCLE_NAMES, BOSS6_CYCLE_COLORS };
 export function triggerDemoAbility(boss, abilityName) {
     if (!boss) return;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:triggerDemoAbility',message:'triggerDemoAbility called',data:{abilityName:abilityName,bossPos:{x:boss.position.x,z:boss.position.z},playerPos:{x:player.position.x,z:player.position.z}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'DEMO'})}).catch(()=>{});
-    // #endregion
-    
     boss.inDemoMode = true;
     boss.demoAbility = abilityName;
     
@@ -1736,10 +1910,6 @@ export function triggerDemoAbility(boss, abilityName) {
     chargeDir.normalize();
     
     boss.demoChargeDir = chargeDir.clone();
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:triggerDemoAbility',message:'Charge direction calculated',data:{chargeDirX:chargeDir.x,chargeDirZ:chargeDir.z},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'DEMO'})}).catch(()=>{});
-    // #endregion
     
     switch (abilityName) {
         case 'charge':
@@ -1761,10 +1931,6 @@ export function triggerDemoAbility(boss, abilityName) {
             
             // Create the charge marker immediately so player can see danger zone
             boss.chargeMarker = createChargePathMarker(boss.position, chargeDir, 80);
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:triggerDemoAbility',message:'Charge marker created, entering demo_dodge_wait',data:{hasMarker:!!boss.chargeMarker},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'DEMO'})}).catch(()=>{});
-            // #endregion
             
             if (boss.isPorcupinefish) {
                 boss.targetInflation = 1.0;
@@ -2020,10 +2186,6 @@ function continueCurrentAbility(boss) {
     switch (boss.aiState) {
         // INTERACTIVE DODGE TUTORIAL - waits for player to exit danger zone
         case 'demo_dodge_wait':
-            // #region agent log
-            if (boss.aiTimer % 60 === 0) fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:demo_dodge_wait',message:'In demo_dodge_wait state',data:{aiTimer:boss.aiTimer,hasChargeMarker:!!boss.chargeMarker,hasDemoChargeDir:!!boss.demoChargeDir,playerInZone:isPlayerInChargeZone(boss,player),playerPos:{x:player.position.x,z:player.position.z},bossPos:{x:boss.position.x,z:boss.position.z}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'DEMO'})}).catch(()=>{});
-            // #endregion
-            
             // Update the charge marker animation
             if (boss.chargeMarker) {
                 updateChargePathMarker(boss.chargeMarker, 0.5);  // Hold at 50% progress
@@ -2032,9 +2194,6 @@ function continueCurrentAbility(boss) {
             // Show tutorial callout on first frame
             if (!boss.demoTutorialShown) {
                 boss.demoTutorialShown = true;
-                // #region agent log
-                fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:demo_dodge_wait',message:'Showing tutorial callout',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'DEMO'})}).catch(()=>{});
-                // #endregion
                 showTutorialCallout('dodgeTutorial', 'Move out of the red zone!', 0);  // 0 = no auto-hide
             }
             
@@ -2054,10 +2213,6 @@ function continueCurrentAbility(boss) {
             
             // Check if player has exited the danger zone
             if (!isPlayerInChargeZone(boss, player)) {
-                // #region agent log
-                fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:demo_dodge_wait',message:'Player exited danger zone - transitioning to wind_up',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'DEMO'})}).catch(()=>{});
-                // #endregion
-                
                 // Disable interactive dodge tutorial mode
                 gameState.interactiveDodgeTutorial = false;
                 
@@ -3414,6 +3569,13 @@ function continueCurrentAbility(boss) {
             const cutsceneTargetAngle = Math.atan2(cutsceneDx, cutsceneDz);
             const cutsceneDiff = Math.atan2(Math.sin(cutsceneTargetAngle - boss.rotation.y), Math.cos(cutsceneTargetAngle - boss.rotation.y));
             boss.rotation.y += cutsceneDiff * 0.02;  // Very slow turn
+            break;
+        
+        // BOSS CHASE RETREATING (Arena 1 boss retreat animation)
+        case 'retreating':
+            // Boss is retreating after phase defeat - animation handled in waveSystem
+            // Just spin and don't do anything else
+            boss.rotation.y += 0.15;
             break;
         
         // INTRO SHOWCASE - Active boss entrance (Phase 1 intro only)

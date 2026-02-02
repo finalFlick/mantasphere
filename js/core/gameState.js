@@ -80,7 +80,10 @@ export const gameState = {
         ambienceBubbles: true,      // Sub-toggle: bubble particles
         ambienceKelp: true,         // Sub-toggle: decorative kelp
         ambienceFish: true,         // Sub-toggle: distant fish silhouettes
-    }
+    },
+    
+    // Arena 1 Boss Chase state - boss appears multiple times across waves
+    arena1ChaseState: null  // Initialized when Arena 1 starts
 };
 
 export function resetGameState() {
@@ -150,4 +153,32 @@ export function resetGameState() {
         bossesDefeated: 0
     };
     gameState.shownModifiers = {};
+    gameState.arena1ChaseState = null;
+}
+
+// Initialize Arena 1 boss chase state
+export function initArena1ChaseState() {
+    gameState.arena1ChaseState = {
+        enabled: true,
+        segment: 1,              // 1=pre-P1, 2=between-P1-P2, 3=between-P2-P3, 4=complete
+        bossPhaseToSpawn: 1,     // Which phase kit to use (1, 2, or 3)
+        bossEncounterCount: 0,   // How many boss fights completed (0, 1, 2, 3)
+        persistentBossHealth: null,  // Boss HP carries across encounters
+        phaseThresholds: {
+            1: 833,  // 66% of 1250 - retreat point for Phase 1
+            2: 416   // 33% of 1250 - retreat point for Phase 2
+        },
+        segmentWaves: {
+            1: 3,    // Waves before P1 (waves 1-3)
+            2: 2,    // Waves between P1-P2 (waves 4-5)
+            3: 2     // Waves between P2-P3 (waves 6-7)
+        }
+    };
+    
+    // Chase state initialized - logged at wave system level
+}
+
+// Reset Arena 1 chase state (on death/restart)
+export function resetArena1ChaseState() {
+    gameState.arena1ChaseState = null;
 }
