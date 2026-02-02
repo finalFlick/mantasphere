@@ -1,7 +1,7 @@
 // Main entry point - coordinates all modules
 import { gameState, resetGameState } from './core/gameState.js';
 import { initScene, createGround, onWindowResize, render, scene, renderer, camera } from './core/scene.js';
-import { initInput, resetInput, checkCutsceneSkip } from './core/input.js';
+import { initInput, resetInput, checkCutsceneSkip, cleanupInput } from './core/input.js';
 import { resetAllEntities, enemies, getCurrentBoss } from './core/entities.js';
 import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG, GAME_TITLE, VERSION } from './config/constants.js';
 
@@ -13,12 +13,14 @@ import { updateWaveSystem } from './systems/waveSystem.js';
 import { spawnSpecificEnemy } from './entities/enemies.js';
 import { spawnBoss } from './entities/boss.js';
 import { shootProjectile, updateProjectiles, resetLastShot, initProjectilePool } from './systems/projectiles.js';
-import { updateXpGems, updateHearts } from './systems/pickups.js';
+import { updateXpGems, updateHearts, spawnArena1ModulePickup, updateModulePickups, clearModulePickups } from './systems/pickups.js';
+import { initModuleProgress } from './systems/moduleProgress.js';
 import { resetDamageTime, setPlayerRef, clearDamageLog } from './systems/damage.js';
 import { initBadges, resetActiveBadges, updateStatBadges } from './systems/badges.js';
 import { initLeaderboard } from './systems/leaderboard.js';
 import { PulseMusic } from './systems/pulseMusic.js';
 import { initLogger, setGameStateRef, resetLogState, log } from './systems/debugLog.js';
+import { gpuInfo } from './systems/gpuDetect.js';
 
 import { generateArena, updateHazardZones } from './arena/generator.js';
 
@@ -63,6 +65,21 @@ import { MenuScene } from './ui/menuScene.js';
 let lastUIUpdate = 0;
 let lastFrameTime = 0;
 
+// Event listener cleanup tracking
+const eventCleanup = [];
+
+function addTrackedListener(target, event, handler, options) {
+    target.addEventListener(event, handler, options);
+    eventCleanup.push({ target, event, handler, options });
+}
+
+function cleanupAllListeners() {
+    eventCleanup.forEach(({ target, event, handler, options }) => {
+        target.removeEventListener(event, handler, options);
+    });
+    eventCleanup.length = 0;
+}
+
 // Helper: Clean up all game state and entities (reduces code duplication)
 function cleanupGameState() {
     resetGameState();
@@ -72,11 +89,14 @@ function cleanupGameState() {
     resetParticles();
     resetPlayer();
     resetInput();
+    cleanupInput();
     resetLastShot();
     resetDamageTime();
     resetActiveBadges();
+    clearModulePickups();  // Clear hidden module pickups
     clearEnemyGeometryCache();
     clearGeometryCache();
+    cleanupAllListeners();
     resetLogState();
     lastFrameTime = 0;
 }
@@ -103,7 +123,7 @@ function unlockMechanicsForArena(arenaNumber) {
     }
 }
 
-function init() {
+async function init() {
     // Initialize debug logger
     setGameStateRef(gameState);
     initLogger();
@@ -134,6 +154,7 @@ function init() {
     // Initialize persistent systems
     initBadges();
     initLeaderboard();
+    initModuleProgress();  // Load module unlock progress from localStorage
     PulseMusic.init();
     
     // Initialize animated menu background
@@ -142,12 +163,134 @@ function init() {
         MenuScene.init(startScreen);
     }
     
+    // Check for software rendering and show warning if needed
+    const loadingScreen = document.getElementById('loading-screen');
+    if (!gpuInfo.supported || gpuInfo.isSoftware || gpuInfo.majorPerformanceCaveat) {
+        const loadingContent = document.querySelector('.loading-content');
+        if (loadingContent) {
+            // Hide the loading spinner and text
+            const spinner = loadingContent.querySelector('.loading-spinner');
+            const loadingText = loadingContent.querySelector('p');
+            if (spinner) spinner.style.display = 'none';
+            if (loadingText) loadingText.style.display = 'none';
+            
+            // Create warning container
+            const warning = document.createElement('div');
+            warning.className = 'gpu-warning';
+            warning.id = 'gpu-warning-modal';
+            
+            if (!gpuInfo.supported) {
+                warning.innerHTML = `
+                    <p class="warning-title">WebGL Not Available</p>
+                    <p class="warning-text">This game requires WebGL to run.</p>
+                    <div class="warning-buttons">
+                        <button id="gpu-show-help" class="warning-btn warning-btn-primary">Show Me How to Fix</button>
+                    </div>
+                `;
+            } else {
+                warning.innerHTML = `
+                    <p class="warning-title">Performance Warning</p>
+                    <p class="warning-text">Hardware acceleration may be disabled. Performance may be reduced.</p>
+                    <div class="warning-buttons">
+                        <button id="gpu-continue" class="warning-btn warning-btn-secondary">Continue Anyway</button>
+                        <button id="gpu-show-help" class="warning-btn warning-btn-primary">Show Me How to Fix</button>
+                    </div>
+                `;
+            }
+            
+            // Create help instructions (hidden initially)
+            const helpContent = document.createElement('div');
+            helpContent.className = 'gpu-help-content';
+            helpContent.id = 'gpu-help-content';
+            helpContent.style.display = 'none';
+            helpContent.innerHTML = `
+                <p class="warning-title">Enable Hardware Acceleration</p>
+                <div class="help-instructions">
+                    <div class="help-section">
+                        <strong>Chrome/Edge:</strong>
+                        <ol>
+                            <li>Open Settings → System</li>
+                            <li>Enable "Use hardware acceleration when available"</li>
+                            <li>Restart browser</li>
+                        </ol>
+                    </div>
+                    <div class="help-section">
+                        <strong>Firefox:</strong>
+                        <ol>
+                            <li>Open Settings → General → Performance</li>
+                            <li>Uncheck "Use recommended performance settings"</li>
+                            <li>Enable "Use hardware acceleration when available"</li>
+                            <li>Restart browser</li>
+                        </ol>
+                    </div>
+                    <div class="help-section">
+                        <strong>Safari:</strong>
+                        <ol>
+                            <li>Check System Preferences → Energy Saver</li>
+                            <li>Ensure "Automatic graphics switching" is enabled</li>
+                        </ol>
+                    </div>
+                    <div class="help-section">
+                        <strong>Still having issues?</strong>
+                        <ul>
+                            <li>Update your graphics drivers</li>
+                            <li>Try a different browser</li>
+                            <li>Check if hardware acceleration is blocked by system policy</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="warning-buttons">
+                    <button id="gpu-help-continue" class="warning-btn warning-btn-primary">Continue to Game</button>
+                </div>
+            `;
+            
+            loadingContent.appendChild(warning);
+            loadingContent.appendChild(helpContent);
+            
+            // Wait for user action (no timeout)
+            await new Promise(resolve => {
+                // Continue Anyway button (only if WebGL is supported)
+                const continueBtn = document.getElementById('gpu-continue');
+                if (continueBtn) {
+                    continueBtn.addEventListener('click', resolve, { once: true });
+                }
+                
+                // Show Me How button
+                const helpBtn = document.getElementById('gpu-show-help');
+                if (helpBtn) {
+                    helpBtn.addEventListener('click', () => {
+                        warning.style.display = 'none';
+                        helpContent.style.display = 'block';
+                    }, { once: true });
+                }
+                
+                // Continue from help screen
+                const helpContinueBtn = document.getElementById('gpu-help-continue');
+                if (helpContinueBtn) {
+                    helpContinueBtn.addEventListener('click', resolve, { once: true });
+                }
+            });
+            
+            // Clean up warning elements
+            warning.remove();
+            helpContent.remove();
+        }
+    }
+    
+    // Hide loading screen after MenuScene is initialized and warning shown
+    if (loadingScreen) {
+        loadingScreen.classList.add('fade-out');
+        setTimeout(() => {
+            loadingScreen.style.display = 'none';
+        }, 500);  // Match transition duration
+    }
+    
     initInput(renderer.domElement);
     initAnnouncementSkip();
-    window.addEventListener('resize', onWindowResize);
+    addTrackedListener(window, 'resize', onWindowResize);
     
     // Music toggle
-    window.addEventListener('keydown', (e) => {
+    addTrackedListener(window, 'keydown', (e) => {
         if (e.key === 'm' || e.key === 'M') {
             const enabled = PulseMusic.toggle();
             if (DEBUG) console.log(`[${GAME_TITLE.toUpperCase()}] Music:`, enabled ? 'ON' : 'OFF');
@@ -155,13 +298,15 @@ function init() {
     });
     
     // Button event listeners
-    document.getElementById('start-btn').addEventListener('click', startGame);
-    document.getElementById('restart-btn').addEventListener('click', restartGame);
+    const startBtn = document.getElementById('start-btn');
+    const restartBtn = document.getElementById('restart-btn');
+    if (startBtn) addTrackedListener(startBtn, 'click', startGame);
+    if (restartBtn) addTrackedListener(restartBtn, 'click', restartGame);
     
     // Leaderboard button
     const leaderboardBtn = document.getElementById('leaderboard-btn');
     if (leaderboardBtn) {
-        leaderboardBtn.addEventListener('click', () => {
+        addTrackedListener(leaderboardBtn, 'click', () => {
             showLeaderboard();
         });
     }
@@ -169,13 +314,13 @@ function init() {
     // Close leaderboard button
     const closeLeaderboardBtn = document.getElementById('close-leaderboard');
     if (closeLeaderboardBtn) {
-        closeLeaderboardBtn.addEventListener('click', hideLeaderboard);
+        addTrackedListener(closeLeaderboardBtn, 'click', hideLeaderboard);
     }
     
     // Badge collection button
     const badgesBtn = document.getElementById('badges-btn');
     if (badgesBtn) {
-        badgesBtn.addEventListener('click', () => {
+        addTrackedListener(badgesBtn, 'click', () => {
             showBadgeCollection();
         });
     }
@@ -183,7 +328,7 @@ function init() {
     // Close badge collection button
     const closeBadgesBtn = document.getElementById('close-badges');
     if (closeBadgesBtn) {
-        closeBadgesBtn.addEventListener('click', hideBadgeCollection);
+        addTrackedListener(closeBadgesBtn, 'click', hideBadgeCollection);
     }
     
     // Initialize character roster UI
@@ -195,7 +340,7 @@ function init() {
     // Pause menu main menu button
     const pauseMainMenuBtn = document.getElementById('pause-main-menu-btn');
     if (pauseMainMenuBtn) {
-        pauseMainMenuBtn.addEventListener('click', (e) => {
+        addTrackedListener(pauseMainMenuBtn, 'click', (e) => {
             e.stopPropagation(); // Prevent resume trigger
             returnToMainMenu();
         });
@@ -206,7 +351,7 @@ function init() {
     if (pauseDebugBtn) {
         if (DEBUG) {
             pauseDebugBtn.style.display = 'inline-block';
-            pauseDebugBtn.addEventListener('click', (e) => {
+            addTrackedListener(pauseDebugBtn, 'click', (e) => {
                 e.stopPropagation(); // Prevent resume trigger
                 showDebugMenu();
             });
@@ -216,7 +361,7 @@ function init() {
     // Arena select button
     const arenaSelectBtn = document.getElementById('arena-select-btn');
     if (arenaSelectBtn) {
-        arenaSelectBtn.addEventListener('click', () => {
+        addTrackedListener(arenaSelectBtn, 'click', () => {
             showArenaSelect();
         });
     }
@@ -224,11 +369,11 @@ function init() {
     // Close arena select button
     const closeArenaSelectBtn = document.getElementById('close-arena-select');
     if (closeArenaSelectBtn) {
-        closeArenaSelectBtn.addEventListener('click', hideArenaSelect);
+        addTrackedListener(closeArenaSelectBtn, 'click', hideArenaSelect);
     }
     
     // Listen for arena select events (avoids global namespace pollution)
-    document.addEventListener('arenaSelect', (e) => {
+    addTrackedListener(document, 'arenaSelect', (e) => {
         if (e.detail && e.detail.arena) {
             startAtArena(e.detail.arena);
         }
@@ -238,7 +383,7 @@ function init() {
     const debugBtn = document.getElementById('debug-btn');
     if (debugBtn) {
         if (DEBUG) {
-            debugBtn.addEventListener('click', () => {
+            addTrackedListener(debugBtn, 'click', () => {
                 showDebugMenu();
             });
         } else {
@@ -250,7 +395,7 @@ function init() {
     // Close debug menu button
     const closeDebugBtn = document.getElementById('close-debug');
     if (closeDebugBtn) {
-        closeDebugBtn.addEventListener('click', hideDebugMenu);
+        addTrackedListener(closeDebugBtn, 'click', hideDebugMenu);
     }
     
     // Debug controls - only set up when DEBUG is enabled
@@ -270,9 +415,9 @@ function init() {
     };
     
     // Start music on any interaction with start screen
-    startScreen.addEventListener('click', tryStartMenuMusic);
-    startScreen.addEventListener('keydown', tryStartMenuMusic);
-    document.addEventListener('keydown', (e) => {
+    addTrackedListener(startScreen, 'click', tryStartMenuMusic);
+    addTrackedListener(startScreen, 'keydown', tryStartMenuMusic);
+    addTrackedListener(document, 'keydown', (e) => {
         if (!gameState.running) tryStartMenuMusic();
     }, { once: true });
     
@@ -283,6 +428,7 @@ function startGame() {
     hideStartScreen();
     resetActiveBadges();
     generateArena(1);
+    spawnArena1ModulePickup();  // Spawn hidden Speed Module pickup
     
     // Position player but don't start waves yet - wait for intro
     resetPlayer();
@@ -309,6 +455,7 @@ function startGame() {
 function restartGame() {
     cleanupGameState();
     generateArena(1);
+    spawnArena1ModulePickup();  // Spawn hidden Speed Module pickup
     
     hideGameOver();
     hidePauseIndicator();
@@ -387,6 +534,12 @@ function startAtArena(arenaNumber) {
     // Generate the arena and start the game
     hideStartScreen();
     generateArena(arenaNumber);
+    
+    // Spawn hidden module pickup if starting at Arena 1
+    if (arenaNumber === 1) {
+        spawnArena1ModulePickup();
+    }
+    
     gameState.running = true;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
     gameState.waveTimer = 0;
@@ -442,6 +595,9 @@ function animate(currentTime) {
     clampedDelta *= timeScale;
     
     if (!gameState.paused) {
+        // Increment frame counter for cooldown tracking
+        gameState.frameCount++;
+        
         try {
             // Handle intro cinematic (camera pan from above before gameplay starts)
             if (gameState.introCinematicActive) {
@@ -519,6 +675,7 @@ function animate(currentTime) {
             updateProjectiles(clampedDelta);
             updateXpGems(clampedDelta);
             updateHearts(clampedDelta);
+            updateModulePickups();  // Update hidden module pickups
             updateParticles(clampedDelta);
             updateTrail();
             updateHazardZones();
@@ -571,47 +728,84 @@ function animate(currentTime) {
 
 // Debug menu functions
 function setupDebugControls() {
+    // Populate GPU info in debug menu
+    const gpuInfoEl = document.getElementById('debug-gpu-info');
+    if (gpuInfoEl) {
+        gpuInfoEl.innerHTML = `
+            <div class="debug-label">WebGL Version: <span style="color: #ffdd44">${gpuInfo.webglVersion || 'N/A'}</span></div>
+            <div class="debug-label">Renderer: <span style="color: #ffdd44">${gpuInfo.renderer || 'Unknown'}</span></div>
+            <div class="debug-label">Vendor: <span style="color: #ffdd44">${gpuInfo.vendor || 'Unknown'}</span></div>
+            <div class="debug-label">Debug Info Available: <span style="color: ${gpuInfo.debugInfoAvailable ? '#44ff44' : '#ff8844'}">${gpuInfo.debugInfoAvailable ? 'Yes' : 'No'}</span></div>
+            <div class="debug-label">Software Rendering: <span style="color: ${gpuInfo.isSoftware ? '#ff4444' : '#44ff44'}">${gpuInfo.isSoftware ? 'Yes (slow)' : 'No'}</span></div>
+            <div class="debug-label">Performance Caveat: <span style="color: ${gpuInfo.majorPerformanceCaveat ? '#ff8844' : '#44ff44'}">${gpuInfo.majorPerformanceCaveat ? 'Yes' : 'No'}</span></div>
+        `;
+    }
+    
     // Empty arena mode
-    document.getElementById('debug-empty-arena')?.addEventListener('click', () => {
-        hideDebugMenu();
-        startEmptyArena();
-    });
+    const emptyArenaBtn = document.getElementById('debug-empty-arena');
+    if (emptyArenaBtn) {
+        addTrackedListener(emptyArenaBtn, 'click', () => {
+            hideDebugMenu();
+            startEmptyArena();
+        });
+    }
     
     // Spawn enemy
-    document.getElementById('debug-spawn-enemy')?.addEventListener('click', () => {
-        const enemyType = document.getElementById('debug-enemy-select').value;
-        debugSpawnEnemy(enemyType);
-    });
+    const spawnEnemyBtn = document.getElementById('debug-spawn-enemy');
+    if (spawnEnemyBtn) {
+        addTrackedListener(spawnEnemyBtn, 'click', () => {
+            const enemyType = document.getElementById('debug-enemy-select').value;
+            debugSpawnEnemy(enemyType);
+        });
+    }
     
     // Warp to arena/wave
-    document.getElementById('debug-warp-btn')?.addEventListener('click', () => {
-        const arena = parseInt(document.getElementById('debug-warp-arena').value);
-        const wave = parseInt(document.getElementById('debug-warp-wave').value);
-        debugWarpToArenaWave(arena, wave);
-    });
+    const warpBtn = document.getElementById('debug-warp-btn');
+    if (warpBtn) {
+        addTrackedListener(warpBtn, 'click', () => {
+            const arena = parseInt(document.getElementById('debug-warp-arena').value);
+            const wave = parseInt(document.getElementById('debug-warp-wave').value);
+            debugWarpToArenaWave(arena, wave);
+        });
+    }
     
     // Spawn boss
-    document.getElementById('debug-spawn-boss')?.addEventListener('click', () => {
-        const bossNum = parseInt(document.getElementById('debug-boss-select').value);
-        debugSpawnBoss(bossNum);
-    });
+    const spawnBossBtn = document.getElementById('debug-spawn-boss');
+    if (spawnBossBtn) {
+        addTrackedListener(spawnBossBtn, 'click', () => {
+            const bossNum = parseInt(document.getElementById('debug-boss-select').value);
+            debugSpawnBoss(bossNum);
+        });
+    }
     
     // Player controls
-    document.getElementById('debug-give-levels')?.addEventListener('click', () => {
-        debugGiveLevels(10);
-    });
+    const giveLevelsBtn = document.getElementById('debug-give-levels');
+    if (giveLevelsBtn) {
+        addTrackedListener(giveLevelsBtn, 'click', () => {
+            debugGiveLevels(10);
+        });
+    }
     
-    document.getElementById('debug-toggle-invincible')?.addEventListener('click', () => {
-        debugToggleInvincibility();
-    });
+    const toggleInvincibleBtn = document.getElementById('debug-toggle-invincible');
+    if (toggleInvincibleBtn) {
+        addTrackedListener(toggleInvincibleBtn, 'click', () => {
+            debugToggleInvincibility();
+        });
+    }
     
-    document.getElementById('debug-full-heal')?.addEventListener('click', () => {
-        debugFullHeal();
-    });
+    const fullHealBtn = document.getElementById('debug-full-heal');
+    if (fullHealBtn) {
+        addTrackedListener(fullHealBtn, 'click', () => {
+            debugFullHeal();
+        });
+    }
     
-    document.getElementById('debug-unlock-all')?.addEventListener('click', () => {
-        debugUnlockAllMechanics();
-    });
+    const unlockAllBtn = document.getElementById('debug-unlock-all');
+    if (unlockAllBtn) {
+        addTrackedListener(unlockAllBtn, 'click', () => {
+            debugUnlockAllMechanics();
+        });
+    }
 }
 
 function startEmptyArena() {
@@ -627,6 +821,7 @@ function startEmptyArena() {
     // Start at arena 1
     hideStartScreen();
     generateArena(1);
+    spawnArena1ModulePickup();  // Spawn hidden Speed Module pickup
     gameState.running = true;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
     gameState.waveTimer = 0;
@@ -707,7 +902,7 @@ function startBossBattle(bossNum) {
         // Initialize game state for boss battle
         resetGameState();
         resetPlayer(player);
-        resetAllEntities();
+        resetAllEntities(scene);
         resetParticles();
         gameState.running = true;
         hideStartScreen();

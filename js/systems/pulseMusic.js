@@ -48,6 +48,11 @@ export const PulseMusic = {
     lastIntensityChange: 0,
     lastShieldHit: 0,
     
+    // Helper: Check if system is ready (reduces duplication)
+    _checkReady() {
+        return this.enabled && this.initialized && this.currentProfile && this.ctx;
+    },
+    
     // Musical scales (intervals from root)
     SCALES: {
         dorian: [0, 2, 3, 5, 7, 9, 10],
@@ -704,7 +709,7 @@ export const PulseMusic = {
     // ============================================================================
     
     playEnemySound(enemy, event) {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.enemySfxProfiles[enemy.typeName] || this.enemySfxProfiles['grunt'];
         if (!profile) return;
@@ -747,7 +752,7 @@ export const PulseMusic = {
     // ============================================================================
     
     playWaveStinger() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.currentProfile;
         const now = this.ctx.currentTime;
@@ -776,7 +781,7 @@ export const PulseMusic = {
     },
     
     playBossStinger() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.currentProfile;
         const now = this.ctx.currentTime;
@@ -792,7 +797,7 @@ export const PulseMusic = {
     },
     
     playVictoryStinger() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.currentProfile;
         const now = this.ctx.currentTime;
@@ -811,7 +816,7 @@ export const PulseMusic = {
     },
     
     playDamageStinger(healthPercent) {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.currentProfile;
         const now = this.ctx.currentTime;
@@ -837,7 +842,7 @@ export const PulseMusic = {
     },
     
     playLevelUpStinger() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.currentProfile;
         const now = this.ctx.currentTime;
@@ -994,7 +999,7 @@ export const PulseMusic = {
     
     // Boss 4 (THE OVERGROWTH) specific audio cues
     onBossGrowthStart() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1035,7 +1040,7 @@ export const PulseMusic = {
     },
     
     onBossSplitWarning() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1083,7 +1088,7 @@ export const PulseMusic = {
     },
     
     onBossSplit() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1153,7 +1158,7 @@ export const PulseMusic = {
     },
     
     onLaneWallWarning() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1236,7 +1241,7 @@ export const PulseMusic = {
     // ============================================================================
     
     onShieldHit() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         // Cooldown to prevent spam (50ms)
         const now = this.ctx.currentTime;
@@ -1282,7 +1287,7 @@ export const PulseMusic = {
     },
     
     onShieldBreak() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1332,7 +1337,7 @@ export const PulseMusic = {
     },
     
     onBossExposed() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const profile = this.currentProfile;
         const now = this.ctx.currentTime;
@@ -1383,7 +1388,7 @@ export const PulseMusic = {
     
     // Boss 1 (RED PUFFER KING) specific audio cues
     onBossChargeWindup() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1408,7 +1413,7 @@ export const PulseMusic = {
     },
     
     onBossShieldActivate() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1437,7 +1442,7 @@ export const PulseMusic = {
     },
     
     onBossShieldBreak() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1483,7 +1488,7 @@ export const PulseMusic = {
     
     // Combo start audio - rising synth note indicating combo chain beginning
     onComboStart(comboLength = 2) {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1532,7 +1537,7 @@ export const PulseMusic = {
     
     // Combo end audio - quick "snap" closure sound
     onComboEnd() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1571,7 +1576,7 @@ export const PulseMusic = {
     
     // Final boss victory fanfare - triumphant ascending chord progression
     onFinalBossVictory() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1633,7 +1638,7 @@ export const PulseMusic = {
     },
     
     onTeleport(isAppearing) {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1681,7 +1686,7 @@ export const PulseMusic = {
     // ============================================================================
     
     onPillarPerch() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1706,7 +1711,7 @@ export const PulseMusic = {
     },
     
     onSlamCharge() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1754,7 +1759,7 @@ export const PulseMusic = {
     },
     
     onSlamImpact() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1804,7 +1809,7 @@ export const PulseMusic = {
     },
     
     onHazardSpawn() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         const profile = this.currentProfile;
@@ -1856,7 +1861,7 @@ export const PulseMusic = {
     
     // Boss starts burrowing - descending rumble sound
     onBurrowStart() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1907,7 +1912,7 @@ export const PulseMusic = {
     },
     
     onBurrowWarning() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1945,7 +1950,7 @@ export const PulseMusic = {
     },
     
     onBurrowEmerge() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         
@@ -1988,7 +1993,7 @@ export const PulseMusic = {
     },
     
     onWallSpawn() {
-        if (!this.enabled || !this.initialized || !this.currentProfile) return;
+        if (!this._checkReady()) return;
         
         const now = this.ctx.currentTime;
         

@@ -12,6 +12,7 @@ export const particles = [];
 export const obstacles = [];
 export const hazardZones = [];
 export const arenaWalls = [];
+export const modulePickups = [];  // Hidden module pickups (Speed Module, etc.)
 
 // Boss is wrapped in an object so it can be reassigned
 const bossHolder = { current: null };
@@ -46,10 +47,12 @@ export function setBossEntrancePortal(portal) {
     entrancePortalHolder.current = portal;
 }
 
-// Reusable vectors for performance
+// Reusable vectors for performance (avoid .clone() in hot paths)
 export const tempVec3 = new THREE.Vector3();
 export const tempVec3_2 = new THREE.Vector3();
 export const tempVec3_3 = new THREE.Vector3();
+export const tempVec3_4 = new THREE.Vector3();
+export const tempVec3_5 = new THREE.Vector3();
 
 export function resetAllEntities(scene) {
     // Enemies - only dispose materials (geometries are cached/shared)
@@ -156,10 +159,50 @@ export function resetAllEntities(scene) {
         bossHolder.current = null;
     }
     
+    // Obstacles - dispose geometries and materials
+    obstacles.forEach(obs => {
+        obs.traverse(c => {
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        });
+        scene.remove(obs);
+    });
+    
+    // Hazard zones - dispose mesh components
+    hazardZones.forEach(hz => {
+        if (hz.mesh) {
+            if (hz.mesh.geometry) hz.mesh.geometry.dispose();
+            if (hz.mesh.material) hz.mesh.material.dispose();
+            scene.remove(hz.mesh);
+        }
+    });
+    
+    // Arena walls - dispose geometries and materials
+    arenaWalls.forEach(wall => {
+        wall.traverse(c => {
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        });
+        scene.remove(wall);
+    });
+    
+    // Module pickups - dispose geometries and materials
+    modulePickups.forEach(pickup => {
+        pickup.traverse(c => {
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        });
+        scene.remove(pickup);
+    });
+    
     enemies.length = 0;
     projectiles.length = 0;
     enemyProjectiles.length = 0;
     xpGems.length = 0;
     particles.length = 0;
     hearts.length = 0;
+    obstacles.length = 0;
+    hazardZones.length = 0;
+    arenaWalls.length = 0;
+    modulePickups.length = 0;
 }

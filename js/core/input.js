@@ -23,24 +23,39 @@ export function setPointerLocked(value) {
     isPointerLocked = value;
 }
 
+// Track event listeners for cleanup
+let cleanupFunctions = [];
+
+export function cleanupInput() {
+    cleanupFunctions.forEach(fn => fn());
+    cleanupFunctions = [];
+}
+
 export function initInput(rendererElement) {
-    document.addEventListener('keydown', (e) => {
+    const keydownHandler = (e) => {
         keys[e.code] = true;
-    });
+    };
+    document.addEventListener('keydown', keydownHandler);
+    cleanupFunctions.push(() => document.removeEventListener('keydown', keydownHandler));
     
-    document.addEventListener('keyup', (e) => {
+    const keyupHandler = (e) => {
         keys[e.code] = false;
-    });
+    };
+    document.addEventListener('keyup', keyupHandler);
+    cleanupFunctions.push(() => document.removeEventListener('keyup', keyupHandler));
     
     document.addEventListener('mousemove', onMouseMove);
+    cleanupFunctions.push(() => document.removeEventListener('mousemove', onMouseMove));
     
-    document.addEventListener('click', () => {
+    const clickHandler = () => {
         if (gameState.running && !isPointerLocked) {
             rendererElement.requestPointerLock();
         }
-    });
+    };
+    document.addEventListener('click', clickHandler);
+    cleanupFunctions.push(() => document.removeEventListener('click', clickHandler));
     
-    document.addEventListener('pointerlockchange', () => {
+    const pointerLockHandler = () => {
         isPointerLocked = document.pointerLockElement === rendererElement;
         const pauseIndicator = document.getElementById('pause-indicator');
         const upgradeMenu = document.getElementById('upgrade-menu');
@@ -64,7 +79,9 @@ export function initInput(rendererElement) {
                 PulseMusic.unpause();
             }
         }
-    });
+    };
+    document.addEventListener('pointerlockchange', pointerLockHandler);
+    cleanupFunctions.push(() => document.removeEventListener('pointerlockchange', pointerLockHandler));
 }
 
 function onMouseMove(event) {

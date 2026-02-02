@@ -113,8 +113,10 @@ export function takeDamage(amount, source = 'Unknown', sourceType = 'enemy', sou
     gameState.combatStats.waveDamageTaken = (gameState.combatStats.waveDamageTaken || 0) + amount;
     
     const flash = document.getElementById('damage-flash');
-    flash.style.opacity = '1';
-    setTimeout(() => flash.style.opacity = '0', 100);
+    if (flash) {
+        flash.style.opacity = '1';
+        setTimeout(() => flash.style.opacity = '0', 100);
+    }
     
     // Play damage music stinger
     PulseMusic.onPlayerDamage(gameState.health / gameState.maxHealth);
