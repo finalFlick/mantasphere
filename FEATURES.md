@@ -31,7 +31,6 @@ SPHERESTORM is an **arcade-style score runner** with:
 - [x] Neon player trail (ground-level, fades cyan → blue)
 - [x] Particle effects on hits, pickups, deaths
 - [x] Damage flash screen effect
-- [x] Enemy shrink-on-damage feedback
 - [x] Enemy hit flash (white flash on hit)
 - [x] Boss glow aura
 

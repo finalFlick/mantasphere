@@ -65,16 +65,17 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 **Tagline:** Spawn of the King
 
 **Stats:**
-- Size: 0.50 (Standard)
+- Size: 0.65 (Standard - noticeably bigger than tiny)
 - Health: 12
 - Speed: 0.055
 - Damage: 10
-- Color: Bright Red (0xff2222)
+- Color: Mid Red (0xff4444)
 - XP Value: 1
 
 **Spawn Info:**
 - Weight: 40 (very common)
 - Arena Intro: 1
+- Min Wave: 2 (only spawns Wave 2+)
 - Availability: All arenas
 
 **Behavior:** Chase
@@ -92,9 +93,85 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 
 **Death VFX:** Burst (12 particles, red)
 
-**Description:** Tiny offspring of the Red Puffer King. These aggressive puffers swarm in numbers, overwhelming through sheer persistence. What they lack in size, they make up for in relentless pursuit.
+**Description:** Standard offspring of the Red Puffer King. These aggressive puffers swarm in numbers, overwhelming through sheer persistence. What they lack in size, they make up for in relentless pursuit.
 
 **Teaching Purpose:** Movement fundamentals, basic dodging
+
+---
+
+### Tiny Puffer
+
+**Tagline:** Spawn of the Spawn
+
+**Stats:**
+- Size: 0.35 (Small but visible)
+- Health: 4 (1-shot at base damage)
+- Speed: 0.07 (Fastest puffer variant)
+- Damage: 5
+- Color: Pink (0xffaaaa)
+- XP Value: 0.5
+
+**Spawn Info:**
+- Weight: 35 (dominant in early waves)
+- Arena Intro: 1
+- Min Wave: 1 (spawns from Wave 1+)
+- Availability: All arenas
+
+**Behavior:** Chase
+- Mindlessly pursues player
+- Dies in one shot
+- Overwhelming in swarms
+
+**Visual Profile:**
+- Type: Mini Porcupinefish (smallest variant)
+- Slightly brighter glow for visibility at small size
+- Same visual style as Boss 1 and other puffers
+
+**Movement Signature:** Sway
+
+**Death VFX:** Burst (6 particles, pink)
+
+**Description:** The smallest of the Red Puffer brood. These hyperactive fry dart around in swarms, individually weak but overwhelming in numbers. One shot dispatches them, but can you hit them all?
+
+**Teaching Purpose:** Target tracking, snap aiming at small fast targets
+
+---
+
+### Big Puffer
+
+**Tagline:** The Elder Spawn
+
+**Stats:**
+- Size: 1.1 (Heavy - very large and intimidating)
+- Health: 30 (3-shot at base damage)
+- Speed: 0.04 (Slowest puffer variant)
+- Damage: 15
+- Color: Dark Red (0x991111)
+- XP Value: 3
+
+**Spawn Info:**
+- Weight: 15 (less common pressure element)
+- Arena Intro: 1
+- Min Wave: 3 (only spawns Wave 3+)
+- Availability: All arenas
+
+**Behavior:** Chase
+- Mindlessly pursues player
+- Takes 3 hits to kill
+- Anchors swarms with bulk
+
+**Visual Profile:**
+- Type: Mini Porcupinefish (largest grunt variant)
+- Deeper glow for ominous presence
+- Same visual style as Boss 1 and other puffers
+
+**Movement Signature:** Sway
+
+**Death VFX:** Burst (16 particles, dark red)
+
+**Description:** A mature Red Puffer that has grown larger and more resilient. Slower but more dangerous, these elders anchor the swarm with their bulk.
+
+**Teaching Purpose:** Target prioritization, threat assessment (kill high-value targets first)
 
 ---
 

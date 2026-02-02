@@ -248,9 +248,7 @@ export function createPlayer() {
 
 export function updatePlayer(delta) {
     // Lock movement during cutscenes to prevent drift into danger
-    // EXCEPTIONS: 
-    // 1. Interactive dodge tutorial (demo_dodge_wait state)
-    // 2. Chase mode after initial dramatic pause (36 frames = 0.6s)
+    // EXCEPTION: Chase mode after initial dramatic pause (36 frames = 0.6s)
     const inChaseIntro = gameState.arena1ChaseState?.enabled && 
                          gameState.waveState === WAVE_STATE.BOSS_INTRO;
     const allowMovementDuringCutscene = (inChaseIntro && gameState.waveTimer > 36);

@@ -1957,7 +1957,8 @@ export function triggerDemoAbility(boss, abilityName) {
             boss.chargeMarker = null;
             
             // Create the charge marker immediately so player can see danger zone
-            boss.chargeMarker = createChargePathMarker(boss.position, chargeDir, 80);
+            // Clone chargeDir since tempVec3 is reused and may be modified elsewhere
+            boss.chargeMarker = createChargePathMarker(boss.position, chargeDir.clone(), 80);
             
             if (boss.isPorcupinefish) {
                 boss.targetInflation = 1.0;
