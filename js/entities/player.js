@@ -1,16 +1,23 @@
 import { scene, camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { keys, cameraAngleX, cameraAngleY } from '../core/input.js';
-import { obstacles, hazardZones, tempVec3, tempVec3_2, tempVec3_3 } from '../core/entities.js';
-import { PLAYER_JUMP_VELOCITY, PLAYER_GRAVITY, BOUNCE_FACTORS, TRAIL_SPAWN_DISTANCE } from '../config/constants.js';
+import { obstacles, hazardZones, enemies, tempVec3, tempVec3_2, tempVec3_3, tempVec3_4, tempVec3_5 } from '../core/entities.js';
+import { PLAYER_JUMP_VELOCITY, PLAYER_GRAVITY, BOUNCE_FACTORS, TRAIL_SPAWN_DISTANCE, WAVE_STATE } from '../config/constants.js';
 import { spawnParticle } from '../effects/particles.js';
 import { spawnTrail, lastTrailPos, setLastTrailPos } from '../effects/trail.js';
 import { takeDamage } from '../systems/damage.js';
+import { triggerSlowMo, triggerScreenFlash } from '../systems/visualFeedback.js';
 
 export let player = null;
 export let isDashing = false;
 export let lastDash = 0;
 const dashDirection = new THREE.Vector3();
+
+// Dash Strike state (active ability from Boss 1 module)
+let isDashStriking = false;
+let dashStrikeStartPos = new THREE.Vector3();
+let dashStrikeTargetPos = new THREE.Vector3();
+let dashStrikeProgress = 0;
 
 // Lean animation state
 let currentLeanX = 0;  // forward/back lean (W/S)
@@ -88,7 +95,7 @@ export function createPlayer() {
     const arcMaterial = new THREE.MeshBasicMaterial({
         color: 0x44ffff,
         transparent: true,
-        opacity: 0.15,
+        opacity: 0.08,
         side: THREE.DoubleSide,
         depthWrite: false
     });
@@ -101,7 +108,7 @@ export function createPlayer() {
     const edgeMaterial = new THREE.MeshBasicMaterial({
         color: 0x44ffff,
         transparent: true,
-        opacity: 0.4,
+        opacity: 0.2,
         side: THREE.DoubleSide,
         depthWrite: false
     });
@@ -130,8 +137,13 @@ export function createPlayer() {
 
 export function updatePlayer(delta) {
     // Lock movement during cutscenes to prevent drift into danger
-    // EXCEPTION: Allow movement during interactive dodge tutorial (demo_dodge_wait state)
-    const allowMovementDuringCutscene = gameState.interactiveDodgeTutorial === true;
+    // EXCEPTIONS: 
+    // 1. Interactive dodge tutorial (demo_dodge_wait state)
+    // 2. Chase mode after initial dramatic pause (36 frames = 0.6s)
+    const inChaseIntro = gameState.arena1ChaseState?.enabled && 
+                         gameState.waveState === WAVE_STATE.BOSS_INTRO;
+    const allowMovementDuringCutscene = gameState.interactiveDodgeTutorial === true ||
+        (inChaseIntro && gameState.waveTimer > 36);
     
     if (gameState.cutsceneActive && !allowMovementDuringCutscene) {
         // Heavy movement dampening - decay any existing velocity
@@ -153,24 +165,56 @@ export function updatePlayer(delta) {
     const forward = tempVec3.set(0, 0, -1).applyAxisAngle(tempVec3_2.set(0, 1, 0), cameraAngleX);
     const right = tempVec3_3.set(1, 0, 0).applyAxisAngle(tempVec3_2.set(0, 1, 0), cameraAngleX);
     
-    if (keys['KeyW']) moveDir.add(forward.clone());
-    if (keys['KeyS']) moveDir.sub(forward.clone());
-    if (keys['KeyA']) moveDir.sub(right.clone().multiplyScalar(0.5));  // Reduced strafe - use mouse to turn
-    if (keys['KeyD']) moveDir.add(right.clone().multiplyScalar(0.5));  // Reduced strafe - use mouse to turn
+    if (keys['KeyW']) moveDir.add(forward);
+    if (keys['KeyS']) moveDir.sub(forward);
+    if (keys['KeyA']) moveDir.sub(tempVec3_4.copy(right).multiplyScalar(0.5));  // Reduced strafe - use mouse to turn
+    if (keys['KeyD']) moveDir.add(tempVec3_5.copy(right).multiplyScalar(0.5));  // Reduced strafe - use mouse to turn
     moveDir.normalize();
     
     const now = Date.now();
-    if ((keys['ShiftLeft'] || keys['ShiftRight']) && now - lastDash > 1000 && moveDir.length() > 0) {
-        isDashing = true;
-        lastDash = now;
-        dashDirection.copy(moveDir);
+    
+    // Decrement Dash Strike cooldown (frame-based)
+    if (gameState.dashStrikeCooldownTimer > 0) {
+        gameState.dashStrikeCooldownTimer--;
+    }
+    
+    // Check for dash/Dash Strike input
+    if ((keys['ShiftLeft'] || keys['ShiftRight']) && moveDir.length() > 0) {
+        // If Dash Strike is enabled and off cooldown, use it
+        if (gameState.dashStrikeEnabled && gameState.dashStrikeCooldownTimer <= 0) {
+            startDashStrike(moveDir);
+        }
+        // Otherwise, regular dash (if available)
+        else if (!gameState.dashStrikeEnabled && now - lastDash > 1000) {
+            isDashing = true;
+            lastDash = now;
+            dashDirection.copy(moveDir);
+        }
     }
     
     const oldX = player.position.x;
     const oldZ = player.position.z;
     const oldY = player.position.y;
     
-    if (isDashing) {
+    // Handle Dash Strike movement
+    if (isDashStriking) {
+        dashStrikeProgress += 0.15;  // ~7 frames to complete
+        
+        if (dashStrikeProgress >= 1) {
+            // Dash Strike complete - deal damage and end
+            completeDashStrike();
+        } else {
+            // Interpolate position
+            player.position.lerpVectors(dashStrikeStartPos, dashStrikeTargetPos, dashStrikeProgress);
+            
+            // Trail particles during dash
+            if (Math.random() > 0.5) {
+                spawnParticle(player.position.clone(), 0x00ffff, 2);
+            }
+        }
+    }
+    // Handle regular dash
+    else if (isDashing) {
         if (now - lastDash < 200) {
             player.position.add(dashDirection.clone().multiplyScalar(0.5));
         } else {
@@ -183,6 +227,7 @@ export function updatePlayer(delta) {
     // Platform collision
     const playerRadius = 0.5;
     for (const obs of obstacles) {
+        if (!obs.collisionData) continue;
         const c = obs.collisionData;
         if (player.position.y < c.topY + 0.1) {
             // X-axis collision
@@ -221,6 +266,7 @@ export function updatePlayer(delta) {
     // Ground/Platform landing
     let groundY = 1;
     for (const obs of obstacles) {
+        if (!obs.collisionData) continue;
         const c = obs.collisionData;
         if (player.position.x + playerRadius > c.minX && 
             player.position.x - playerRadius < c.maxX && 
@@ -403,6 +449,8 @@ export function resetPlayer() {
         }
     }
     isDashing = false;
+    isDashStriking = false;
+    dashStrikeProgress = 0;
     lastDash = 0;
     currentLeanX = 0;
     currentLeanZ = 0;
@@ -410,4 +458,104 @@ export function resetPlayer() {
 
 export function getPlayer() {
     return player;
+}
+
+// ==================== DASH STRIKE ABILITY ====================
+// Active ability from Boss 1 module - dash forward and deal AoE damage
+
+/**
+ * Start a Dash Strike in the given direction
+ */
+function startDashStrike(direction) {
+    if (!gameState.dashStrikeConfig) return;
+    
+    isDashStriking = true;
+    dashStrikeProgress = 0;
+    
+    // Store start position
+    dashStrikeStartPos.copy(player.position);
+    
+    // Calculate target position based on dash distance
+    const distance = gameState.dashStrikeConfig.distance || 8;
+    dashStrikeTargetPos.copy(player.position);
+    dashStrikeTargetPos.add(direction.clone().normalize().multiplyScalar(distance));
+    
+    // Clamp to arena bounds
+    dashStrikeTargetPos.x = Math.max(-42, Math.min(42, dashStrikeTargetPos.x));
+    dashStrikeTargetPos.z = Math.max(-42, Math.min(42, dashStrikeTargetPos.z));
+    
+    // Set cooldown (frames)
+    gameState.dashStrikeCooldownTimer = gameState.dashStrikeConfig.cooldown || 300;
+    
+    // Visual feedback
+    triggerScreenFlash(0x00ffff, 0.2);
+    triggerSlowMo(15, 0.5);  // Brief slow-mo at start
+    
+    // Spawn trail particles at start
+    spawnParticle(player.position.clone(), 0x00ffff, 8);
+}
+
+/**
+ * Complete the Dash Strike - deal AoE damage at destination
+ */
+function completeDashStrike() {
+    isDashStriking = false;
+    
+    // Place player at target
+    player.position.copy(dashStrikeTargetPos);
+    
+    // Deal AoE damage to nearby enemies
+    const damage = gameState.dashStrikeConfig?.damage || 15;
+    const damageRadius = 4;  // AoE radius
+    
+    let hitCount = 0;
+    for (const enemy of enemies) {
+        if (enemy.isDying) continue;
+        
+        const dist = enemy.position.distanceTo(player.position);
+        if (dist < damageRadius) {
+            // Deal damage to enemy
+            enemy.health -= damage;
+            hitCount++;
+            
+            // Spawn hit VFX
+            spawnParticle(enemy.position.clone(), 0x00ffff, 5);
+            
+            // Flash enemy
+            if (enemy.baseMaterial) {
+                enemy.baseMaterial.emissive.setHex(0x00ffff);
+                enemy.baseMaterial.emissiveIntensity = 1;
+                setTimeout(() => {
+                    if (enemy.baseMaterial) {
+                        enemy.baseMaterial.emissive.setHex(enemy.baseColor || 0xff4444);
+                        enemy.baseMaterial.emissiveIntensity = 0.3;
+                    }
+                }, 100);
+            }
+        }
+    }
+    
+    // Impact VFX
+    spawnParticle(player.position.clone(), 0x00ffff, 12);
+    
+    // Extra feedback if we hit something
+    if (hitCount > 0) {
+        triggerScreenFlash(0x00ffff, 0.15);
+    }
+}
+
+/**
+ * Check if Dash Strike is available (off cooldown)
+ */
+export function isDashStrikeReady() {
+    return gameState.dashStrikeEnabled && gameState.dashStrikeCooldownTimer <= 0;
+}
+
+/**
+ * Get Dash Strike cooldown progress (0-1, 1 = ready)
+ */
+export function getDashStrikeCooldownProgress() {
+    if (!gameState.dashStrikeEnabled || !gameState.dashStrikeConfig) return 1;
+    const maxCooldown = gameState.dashStrikeConfig.cooldown || 300;
+    return 1 - (gameState.dashStrikeCooldownTimer / maxCooldown);
 }

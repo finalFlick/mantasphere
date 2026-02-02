@@ -14,6 +14,8 @@ import { markBossEncountered } from '../ui/rosterUI.js';
 import { createShieldBubble, createExposedVFX, updateExposedVFX, cleanupVFX, createSlamMarker, updateSlamMarker, createTeleportOriginVFX, createTeleportDestinationVFX, updateTeleportDestinationVFX, createEmergeWarningVFX, updateEmergeWarningVFX, createBurrowStartVFX, updateBurrowStartVFX, triggerSlowMo, triggerScreenFlash, createChargePathMarker, updateChargePathMarker, createHazardPreviewCircle, updateHazardPreviewCircle, createLaneWallPreview, updateLaneWallPreview, createPerchChargeVFX, updatePerchChargeVFX, createGrowthIndicator, updateGrowthIndicator, createSplitWarningVFX, updateSplitWarningVFX, createComboTether, updateComboTether, createComboLockInMarker, updateComboLockInMarker, createMinionTether, updateMinionTethers, createTetherSnapVFX, updateTetherSnapVFX, createChargeTrailSegment, updateChargeTrailSegment, createDetonationWarningVFX, updateDetonationWarningVFX, createTeleportDecoy, updateTeleportDecoy, createBlinkBarrageMarker, updateBlinkBarrageMarker, createVineZone, updateVineZone, createBurrowPath, updateBurrowPath, createFakeEmergeMarker, updateFakeEmergeMarker, createEnergyTransferVFX, createWallImpactVFX, updateWallImpactVFX } from '../systems/visualFeedback.js';
 import { PulseMusic } from '../systems/pulseMusic.js';
 import { log, logOnce, logThrottled, assert } from '../systems/debugLog.js';
+import { incrementModuleCounter, tryLevelUpModule, getModuleLevel } from '../systems/moduleProgress.js';
+import { showModuleUnlockBanner } from '../ui/hud.js';
 
 // Anti-stuck detection uses BOSS_STUCK_THRESHOLD and BOSS_STUCK_FRAMES from constants.js
 
@@ -596,14 +598,31 @@ export function spawnBoss(arenaNumber) {
         boss.isRetreating = false;
         
         // Restore persistent HP if returning from previous encounter
+        // FIX: Ensure HP is at least threshold + 50 to prevent immediate retreat
         if (chase.persistentBossHealth !== null && chase.bossEncounterCount > 0) {
-            boss.health = chase.persistentBossHealth;
+            // Restore persistent HP but ensure buffer above current threshold
+            const minHpForPhase = boss.retreatThreshold + 50;  // 50 HP buffer
+            boss.health = Math.max(chase.persistentBossHealth, minHpForPhase);
         }
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:spawnBoss:afterHPRestore',message:'Boss HP after restore',data:{hp:boss.health,threshold:boss.retreatThreshold,persistent:chase.persistentBossHealth,encounters:chase.bossEncounterCount,phase:boss.phase,phaseToSpawn:chase.bossPhaseToSpawn,margin:boss.health-boss.retreatThreshold},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6B'})}).catch(()=>{});
+        // #endregion
         
         // Entrance invulnerability
         boss.entranceTimer = 0;
         boss.entranceInvulnFrames = 60;  // 1 second
         boss.canDamagePlayer = false;
+        
+        // RETURN ANIMATION: If returning from retreat, spawn high and descend
+        if (chase.bossEncounterCount > 0) {
+            boss.isDescending = true;
+            boss.descentStartY = 60;  // Start high above arena
+            boss.descentTargetY = boss.position.y;  // Normal spawn height
+            boss.descentTimer = 0;
+            boss.descentDuration = 180;  // 3 seconds to descend (during 4s intro)
+            boss.position.y = boss.descentStartY;  // Start high
+        }
         
         log('BOSS', 'spawn', {
             phase: boss.phase,
@@ -611,7 +630,8 @@ export function spawnBoss(arenaNumber) {
             retreatThreshold: boss.retreatThreshold,
             phaseLocked: boss.phaseLocked,
             canRetreat: boss.canRetreat,
-            entranceInvuln: boss.entranceInvulnFrames
+            entranceInvuln: boss.entranceInvulnFrames,
+            isDescending: boss.isDescending || false
         });
     }
     
@@ -721,10 +741,10 @@ export function checkBossRetreat(boss) {
         canRetreat: boss.canRetreat
     });
     
-    // Check if HP at or below retreat threshold
-    if (boss.health <= boss.retreatThreshold) {
+    // Check if HP BELOW retreat threshold (not equal - prevents immediate re-retreat on spawn)
+    if (boss.health < boss.retreatThreshold) {
         // Floor HP at threshold (don't go below)
-        boss.health = Math.max(boss.health, boss.retreatThreshold);
+        boss.health = boss.retreatThreshold;
         initiateRetreat(boss);
         return true;
     }
@@ -966,9 +986,21 @@ export function updateBoss() {
         }
     }
     
-    // Shield failsafe timeout - prevents softlock if minions get stuck
+    // Shield system with stuck assist + failsafe
     if (boss.shieldActive && boss.shieldConfig && boss.shieldConfig.failsafeTimeout) {
         const shieldDuration = (Date.now() - boss.shieldStartTime) / 1000;
+        
+        // Stuck assist: Shield flickers at 7s to signal it's weakening
+        // (Helps player understand shield will break soon even if struggling)
+        if (shieldDuration >= 7.0 && shieldDuration < boss.shieldConfig.failsafeTimeout) {
+            if (boss.shieldMesh) {
+                // Flicker shield opacity (every 10 frames)
+                const flickerFrame = Math.floor(shieldDuration * 60) % 10;
+                boss.shieldMesh.material.opacity = flickerFrame < 5 ? 0.3 : 0.15;
+            }
+        }
+        
+        // Failsafe timeout - auto-break shield if taking too long
         if (shieldDuration >= boss.shieldConfig.failsafeTimeout) {
             // Auto-break shield with special message
             boss.shieldActive = false;
@@ -2123,6 +2155,10 @@ export function spawnIntroMinions(boss, count = 3) {
 }
 
 function startAbility(boss, ability) {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'boss.js:startAbility',message:'Ability started',data:{ability:ability,currentState:boss.aiState,cutsceneActive:gameState.cutsceneActive,waveState:gameState.waveState,phase:boss.phase},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4A'})}).catch(()=>{});
+    // #endregion
+    
     boss.aiTimer = 0;
     boss.abilityCooldowns[ability] = ABILITY_COOLDOWNS[ability];
     
@@ -2243,8 +2279,17 @@ function continueCurrentAbility(boss) {
                 // Charge length = full arena (80 units) so boss can charge across entire map
                 boss.chargeMarker = createChargePathMarker(boss.position, dir, 80);
                 
+                // Store initial charge direction for facing
+                boss.windUpChargeDir = dir.clone();
+                
                 // Audio cue for charge wind-up
                 PulseMusic.onBossChargeWindup();
+            }
+            
+            // FIX: Boss always faces charge direction during wind_up (not player)
+            if (boss.windUpChargeDir) {
+                const windUpAngle = Math.atan2(boss.windUpChargeDir.x, boss.windUpChargeDir.z);
+                boss.rotation.y = windUpAngle;
             }
             
             // Update marker
@@ -2343,6 +2388,18 @@ function continueCurrentAbility(boss) {
             }
             break;
         case 'charging':
+            // FIX: Reset emissive color from lock-in flash (gold -> base color)
+            if (boss.bodyMaterial && boss.aiTimer === 0) {
+                boss.bodyMaterial.emissive.setHex(boss.baseColor);
+            }
+            
+            // FIX: Force boss to face charge direction during charging
+            // This ensures boss always faces where it's going, not where player is
+            if (boss.chargeDirection) {
+                const chargeAngle = Math.atan2(boss.chargeDirection.x, boss.chargeDirection.z);
+                boss.rotation.y = chargeAngle;
+            }
+            
             // Porcupinefish: BLAST deflation during charge (puffer releasing water)
             if (boss.isPorcupinefish) {
                 boss.targetInflation = -0.7;  // Extra-small for dramatic blast effect (~0.5x scale)
@@ -2516,7 +2573,10 @@ function continueCurrentAbility(boss) {
         // SUMMON ABILITY
         case 'summon':
             if (boss.aiTimer === Math.floor(tellDuration.summon)) {
-                let summonCount = boss.phase + 1;
+                // Arena 1 Phase 2 optimization: fewer minions for faster shield break (30-60s target)
+                let summonCount = (gameState.currentArena === 1 && boss.phase === 2) 
+                    ? 2  // Phase 2: only 2 minions (faster to kill)
+                    : boss.phase + 1;  // Other phases: normal scaling
                 
                 // Boss 1 Phase 3: Apply summon cap (max 4 active minions)
                 const config = BOSS_CONFIG[gameState.currentArena];
@@ -2606,8 +2666,13 @@ function continueCurrentAbility(boss) {
                         minion.isBossMinion = true;
                         minion.parentBoss = boss;
                         
-                        // Phase 3: Summons are 30% squishier (easier to clear while boss fights)
-                        if (boss.phase >= 3) {
+                        // Phase 2+: Make minions squishier for faster shield resolution
+                        // Arena 1 Phase 2: Extra squishy (50% HP) for 35-55s target duration
+                        // Other phases: 30% squishier
+                        if (gameState.currentArena === 1 && boss.phase === 2) {
+                            minion.health *= 0.5;
+                            minion.maxHealth *= 0.5;
+                        } else if (boss.phase >= 3) {
                             minion.health *= 0.7;
                             minion.maxHealth *= 0.7;
                         }
@@ -2649,9 +2714,6 @@ function continueCurrentAbility(boss) {
             tempVec3.y = 0;
             tempVec3.normalize();
             boss.position.add(tempVec3.multiplyScalar(0.15));
-            
-            // FIX: Changed velocityY < 0 to velocityY <= 0 to handle race condition
-            // where gravity resets velocityY to 0 when boss hits ground
             if (boss.position.y <= boss.size * boss.growthScale + 0.1 && boss.velocityY <= 0) {
                 boss.aiState = 'landed';
                 boss.aiTimer = 0;
@@ -3583,6 +3645,27 @@ function continueCurrentAbility(boss) {
             if (!boss.showcaseTimer) boss.showcaseTimer = 0;
             boss.showcaseTimer++;
             
+            // DESCENT ANIMATION: Boss flies down from above when returning
+            if (boss.isDescending) {
+                boss.descentTimer++;
+                const progress = Math.min(boss.descentTimer / boss.descentDuration, 1);
+                
+                // Easing function (ease out cubic) for smooth landing
+                const eased = 1 - Math.pow(1 - progress, 3);
+                
+                // Interpolate Y position
+                boss.position.y = boss.descentStartY + (boss.descentTargetY - boss.descentStartY) * eased;
+                
+                // Spin during descent (slower as it lands)
+                boss.rotation.y += 0.15 * (1 - progress * 0.7);
+                
+                // Complete descent
+                if (progress >= 1) {
+                    boss.isDescending = false;
+                    boss.position.y = boss.descentTargetY;
+                }
+            }
+            
             // Always face player (menacing)
             const showcaseDx = player.position.x - boss.position.x;
             const showcaseDz = player.position.z - boss.position.z;
@@ -3759,7 +3842,6 @@ function continueCurrentAbility(boss) {
                 boss.position.add(tempVec3);
                 
                 // Check if landed on pillar
-                // FIX: Changed velocityY < 0 to velocityY <= 0 to handle race condition
                 if (boss.position.y >= pillarTop.y - 0.5 && boss.velocityY <= 0) {
                     boss.position.copy(pillarTop);
                     boss.position.y += boss.size;
@@ -3831,7 +3913,6 @@ function continueCurrentAbility(boss) {
             boss.position.add(tempVec3);
             
             // Impact
-            // FIX: Changed velocityY < 0 to velocityY <= 0 to handle race condition
             if (boss.position.y <= boss.size + 0.1 && boss.velocityY <= 0) {
                 // Slam impact!
                 boss.position.y = boss.size;
@@ -4953,6 +5034,26 @@ export function killBoss() {
     // Track boss defeat for combat stats
     if (gameState.combatStats) {
         gameState.combatStats.bossesDefeated++;
+    }
+    
+    // ==================== MODULE UNLOCK: Boss 1 Dash Strike ====================
+    // Defeating Boss 1 unlocks/progresses the Dash Strike module
+    if (gameState.currentArena === 1) {
+        const previousLevel = getModuleLevel('dashStrike');
+        incrementModuleCounter('dashStrike', 'bossKills');
+        const newLevel = tryLevelUpModule('dashStrike');
+        
+        if (newLevel > 0) {
+            // Module was unlocked or leveled up
+            const isUnlock = previousLevel === 0;
+            showModuleUnlockBanner('dashStrike', newLevel, isUnlock);
+            log('BOSS', 'module_unlock', {
+                module: 'dashStrike',
+                previousLevel,
+                newLevel,
+                isUnlock
+            });
+        }
     }
     
     // Check if this is the final boss (Arena 6)

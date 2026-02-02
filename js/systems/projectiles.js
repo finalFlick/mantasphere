@@ -11,7 +11,7 @@ import {
 import { player } from '../entities/player.js';
 import { cameraAngleX } from '../core/input.js';
 import { handleEnemyDeath } from '../entities/enemies.js';
-import { killBoss } from '../entities/boss.js';
+import { killBoss, checkBossRetreat } from '../entities/boss.js';
 import { spawnParticle, spawnShieldHitVFX, spawnShieldBreakVFX } from '../effects/particles.js';
 import { spawnXpGem, spawnHeart } from './pickups.js';
 import { takeDamage, lastDamageTime, setLastDamageTime } from './damage.js';
@@ -49,7 +49,7 @@ export function initProjectilePool() {
     // Create shared geometries and materials once
     sharedProjectileGeometry = new THREE.SphereGeometry(0.15, 8, 8);
     sharedProjectileMaterial = new THREE.MeshBasicMaterial({
-        color: 0x44ffff,
+        color: 0xffdd44,  // Yellow (matches UI)
         transparent: true,
         opacity: 0.9
     });
@@ -96,7 +96,8 @@ function getNextPlayerProjectile() {
     }
     // Pool exhausted - reuse oldest
     const proj = projectilePool[0];
-    projectiles.splice(projectiles.indexOf(proj), 1);
+    const idx = projectiles.indexOf(proj);
+    if (idx > -1) projectiles.splice(idx, 1);
     proj.active = true;
     proj.visible = true;
     return proj;
@@ -113,7 +114,8 @@ function getNextEnemyProjectile() {
     }
     // Pool exhausted - reuse oldest
     const proj = enemyProjectilePool[0];
-    enemyProjectiles.splice(enemyProjectiles.indexOf(proj), 1);
+    const idx = enemyProjectiles.indexOf(proj);
+    if (idx > -1) enemyProjectiles.splice(idx, 1);
     proj.active = true;
     proj.visible = true;
     return proj;
@@ -267,9 +269,8 @@ export function updateProjectiles(delta) {
                     }
                 }
                 
-                // Shrink on damage
-                const healthPercent = Math.max(0, enemy.health / enemy.maxHealth);
-                enemy.scale.setScalar(0.65 + 0.35 * healthPercent);
+                // REMOVED: Shrink on damage (user preference - just use glow VFX)
+                // enemy.scale.setScalar(0.65 + 0.35 * healthPercent);
                 
                 // Hit flash - handle both Mesh and Group enemies
                 const enemyMat = enemy.baseMaterial || enemy.material;
@@ -403,6 +404,13 @@ export function updateProjectiles(delta) {
             
             if (currentBoss.bodyMaterial) {
                 safeFlashMaterial(currentBoss.bodyMaterial, currentBoss, 0xffffff, currentBoss.baseColor, 0.3, 50);
+            }
+            
+            // Check for retreat threshold before death (Arena 1 chase mode)
+            if (checkBossRetreat(currentBoss)) {
+                // Boss is retreating - don't kill
+                hit = true;
+                continue;
             }
             
             if (currentBoss.health <= 0 && !currentBoss.isDying) {
