@@ -247,57 +247,93 @@ Starting values (level 1, no upgrades):
 
 ### Upgrades
 
-Available through level-up system:
+The game uses a two-tier upgrade system:
 
-#### Damage Up
+#### Core Upgrades (Always Available)
+
+These 4 upgrades are always in the level-up pool from game start:
+
+**Damage Up**
 - **Icon:** ⚔️
 - **Effect:** +25% damage (multiplicative)
 - **Stat:** `damage`
 - **Stacking:** Multiplicative (1.25x per upgrade)
 
-#### Attack Speed
+**Attack Speed**
 - **Icon:** ⚡
-- **Effect:** +20% fire rate (multiplicative)
+- **Effect:** +25% fire rate (multiplicative)
 - **Stat:** `attackSpeed`
 - **Formula:** Fire rate = 500ms / attackSpeed
-- **Stacking:** Multiplicative (1.2x per upgrade)
+- **Stacking:** Multiplicative (1.25x per upgrade)
 
-#### Multi Shot
-- **Icon:** 🎯
-- **Effect:** +1 projectile
-- **Stat:** `projectileCount`
-- **Stacking:** Additive (+1 per upgrade)
-
-#### Speed Boost
-- **Icon:** 👟
-- **Effect:** +15% move speed (multiplicative)
-- **Stat:** `moveSpeed`
-- **Stacking:** Multiplicative (1.15x per upgrade)
-
-#### Max Health
+**Max Health**
 - **Icon:** ❤️
 - **Effect:** +25 max HP (additive)
 - **Stat:** `maxHealth`
 - **Stacking:** Additive (+25 per upgrade)
 - **Note:** Does NOT heal current HP
 
-#### XP Magnet
+**XP Magnet**
 - **Icon:** 🧲
 - **Effect:** +30% pickup range (multiplicative)
 - **Stat:** `pickupRange`
 - **Stacking:** Multiplicative (1.3x per upgrade)
 
-#### XP Boost
+#### Future Unlockable Upgrades
+
+These upgrades are locked at game start and will be unlockable through progression:
+
+**Multi Shot**
+- **Icon:** 🎯
+- **Effect:** +1 projectile
+- **Unlock:** Arena 2+ (planned)
+
+**XP Boost**
 - **Icon:** ✨
 - **Effect:** +20% XP gain (multiplicative)
-- **Stat:** `xpMultiplier`
-- **Stacking:** Multiplicative (1.2x per upgrade)
+- **Unlock:** Arena 2+ (planned)
 
-#### Bullet Speed
+**Bullet Speed**
 - **Icon:** 💨
 - **Effect:** +25% projectile speed (multiplicative)
-- **Stat:** `projectileSpeed`
-- **Stacking:** Multiplicative (1.25x per upgrade)
+- **Unlock:** Arena 2+ (planned)
+
+---
+
+### Module System
+
+Modules are persistent upgrades that carry across runs and feature mastery progression.
+
+#### Speed Module
+
+**Unlock:** Hidden pickup in Arena 1 (exploration)
+
+**Mastery Levels:**
+- **L1 (1 find):** +15% move speed
+- **L2 (3 finds):** +25% move speed
+- **L3 (8 finds):** +30% move speed
+
+**Type:** Passive stat boost
+
+**Persistence:** Unlocks and mastery level persist across runs
+
+#### Dash Strike
+
+**Unlock:** Defeat Boss 1 (Red Puffer King) Phase 3
+
+**Mastery Levels:**
+- **L1 (1 kill):** 8 range, 5s cooldown, 15 damage
+- **L2 (5 kills):** 10 range, 4s cooldown, 20 damage
+- **L3 (15 kills):** 12 range, 3s cooldown, 25 damage
+
+**Type:** Active ability (press Shift to dash)
+
+**Persistence:** Unlocks and mastery level persist across runs
+
+**Behavior:**
+- Dash in current movement direction
+- Deal AoE damage at impact point
+- Cooldown displayed in UI
 
 ---
 

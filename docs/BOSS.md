@@ -69,35 +69,6 @@ All bosses spawn from an **entrance portal** that appears before the boss:
 
 ---
 
-### Interactive Dodge Tutorial (Boss 1)
-
-Boss 1's intro includes an **interactive dodge tutorial** where the player must actively participate:
-
-**Tutorial Flow:**
-1. Boss enters `demo_dodge_wait` state
-2. Charge path marker (red danger zone) appears
-3. Game pauses boss movement
-4. Tutorial callout: "Move out of the red zone!"
-5. Player moves out of danger zone
-6. Boss resumes charge and completes the attack
-7. Repeat for additional demo charges
-
-**Key Features:**
-- Player is visible and controllable during tutorial
-- Player is invincible via `cutsceneInvincible` flag
-- No timeout - game waits indefinitely for player action
-- Teaches the exact dodge pattern used in real combat
-
-**Danger Zone Detection:**
-The `isPlayerInChargeZone()` function checks if player is within:
-- The rectangular charge path (5 units wide)
-- Extending from boss position toward charge direction
-- Length of 80 units (full arena)
-
-**Implementation:** `js/entities/boss.js` - `demo_dodge_wait` state, `isPlayerInChargeZone()`
-
----
-
 ## Boss Roster
 
 ### Arena 1: RED PUFFER KING
@@ -138,13 +109,6 @@ The `isPlayerInChargeZone()` function checks if player is within:
 **Arena Enemies:**
 - Red Puffers (primary wave enemy)
 - Fast Bouncers (boss summons)
-
-**Interactive Intro Tutorial:**
-Boss 1 features an extended 30-second intro with interactive dodge demonstrations:
-- Player is visible and must actively dodge demo charges
-- Tutorial callout guides player: "Move out of the red zone!"
-- 4 demo charges teach the charge pattern before combat begins
-- Combat starts after player successfully dodges all demos
 
 **Design Lesson:** "Can you survive pressure?" - Tests basic movement, timing, and target prioritization.
 

@@ -59,6 +59,7 @@ export const gameState = {
     // Cutscene state - prevents damage and boss AI during transitions
     cutsceneActive: false,
     cutsceneInvincible: false,
+    interactiveDodgeTutorial: false,  // Allows player movement during dodge tutorial
     
     // Boss intro/cutscene tracking
     bossIntroDemoPhase: 0,
@@ -110,6 +111,7 @@ export function resetGameState() {
         introCinematicActive: false,
         cutsceneActive: false,
         cutsceneInvincible: false,
+        interactiveDodgeTutorial: false,
         currentArena: 1,
         currentWave: 1,
         waveState: WAVE_STATE.WAVE_INTRO,
