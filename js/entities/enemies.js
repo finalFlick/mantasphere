@@ -3,7 +3,7 @@ import { gameState } from '../core/gameState.js';
 import { enemies, obstacles, hazardZones, tempVec3 } from '../core/entities.js';
 import { player } from './player.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
-import { DAMAGE_COOLDOWN, ENEMY_CAPS, WAVE_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, THREAT_BUDGET, SPLITLING_SPAWN_STUN_FRAMES } from '../config/constants.js';
+import { DAMAGE_COOLDOWN, ENEMY_CAPS, WAVE_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, THREAT_BUDGET, SPLITLING_SPAWN_STUN_FRAMES, SCHOOL_CONFIG, SPAWN_CHOREOGRAPHY } from '../config/constants.js';
 import { spawnParticle, spawnEnemyDeathVfx } from '../effects/particles.js';
 import { createHazardZone } from '../arena/generator.js';
 import { takeDamage, lastDamageTime, setLastDamageTime } from '../systems/damage.js';
@@ -13,6 +13,7 @@ import { PulseMusic } from '../systems/pulseMusic.js';
 import { ARENA_CONFIG } from '../config/arenas.js';
 import { spawnEnemyProjectileFromPool } from '../systems/projectiles.js';
 import { markEnemyEncountered } from '../ui/rosterUI.js';
+import { log, logOnce, logThrottled } from '../systems/debugLog.js';
 
 // Cache pillar positions for pillar hopper behavior
 let cachedPillarTops = [];
@@ -367,6 +368,9 @@ export function getWeightedEnemyType() {
         // Skip enemies gated by maxArena
         if (typeData.maxArena && arena > typeData.maxArena) continue;
         
+        // Skip enemies gated by minWave (e.g., gruntTiny only in Wave 2+)
+        if (typeData.minWave && wave < typeData.minWave) continue;
+        
         // Skip if at cap
         const cap = getCapForEnemy(typeName, arena);
         const currentCount = countEnemiesOfType(typeName);
@@ -443,11 +447,55 @@ function isInSameCorridor(x1, z1, x2, z2) {
     return inWestCorridor || inEastCorridor || inNorthCorridor || inSouthCorridor;
 }
 
+// Get choreographed spawn position based on direction
+function getChoreographedSpawnPosition(direction) {
+    const edgeDist = SPAWN_CHOREOGRAPHY.edgeSpawnDistance;
+    const spread = SPAWN_CHOREOGRAPHY.edgeSpread;
+    const randomOffset = (Math.random() - 0.5) * spread * 2;
+    
+    switch (direction) {
+        case 'north':
+            return { x: randomOffset, z: -edgeDist };
+        case 'south':
+            return { x: randomOffset, z: edgeDist };
+        case 'east':
+            return { x: edgeDist, z: randomOffset };
+        case 'west':
+            return { x: -edgeDist, z: randomOffset };
+        default:
+            return null;
+    }
+}
+
 // Get spawn position with arena-specific rules
 function getArenaSpawnPosition(playerPos, playerVelocity) {
     const arena = gameState.currentArena;
     const arenaData = ARENA_CONFIG.arenas[Math.min(arena, 6)];
     const spawnConfig = arenaData?.spawnConfig;
+    
+    // Check for spawn choreography (lane flood, pincer, etc.)
+    const choreography = gameState.waveChoreography;
+    if (choreography && choreography.type !== 'random' && SPAWN_CHOREOGRAPHY.enabled) {
+        let pos = null;
+        
+        if (choreography.type === 'lane') {
+            // All enemies from one direction
+            pos = getChoreographedSpawnPosition(choreography.primaryDirection);
+        } else if (choreography.type === 'pincer') {
+            // Alternate between two opposite directions
+            const useSecondary = Math.random() < 0.5;
+            const direction = useSecondary ? choreography.secondaryDirection : choreography.primaryDirection;
+            pos = getChoreographedSpawnPosition(direction);
+        }
+        
+        if (pos) {
+            // Clamp to arena bounds
+            return {
+                x: Math.max(-42, Math.min(42, pos.x)),
+                z: Math.max(-42, Math.min(42, pos.z))
+            };
+        }
+    }
     
     // Default spawn: random distance and angle
     let distance = 28 + Math.random() * 12;
@@ -544,48 +592,16 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     return { x, z };
 }
 
-export function spawnWaveEnemy() {
-    // Get arena-aware spawn position
-    const spawnPos = getArenaSpawnPosition(player.position, player.velocity);
-    let x = spawnPos.x;
-    let z = spawnPos.z;
-    
-    // Use budget-aware enemy selection if pool exists
-    const enemyType = selectEnemyByBudget();
-    if (!enemyType) return null; // No affordable enemy
-    
+// Helper: Create and configure a single enemy at a specific position
+function spawnEnemyAtPosition(enemyType, x, z) {
     const typeData = enemyType.data;
     
-    // Bouncer spawn validation - prevent spawning into immediate collision
-    if (typeData.behavior === 'bouncer') {
-        let spawnAttempts = 0;
-        let validSpawn = false;
-        
-        while (!validSpawn && spawnAttempts < 5) {
-            // Check if spawn position has immediate obstacle collision
-            let immediateCollision = false;
-            for (const obs of obstacles) {
-                const c = obs.collisionData;
-                if (!c) continue;
-                if (x > c.minX - 2 && x < c.maxX + 2 &&
-                    z > c.minZ - 2 && z < c.maxZ + 2) {
-                    immediateCollision = true;
-                    break;
-                }
-            }
-            
-            if (!immediateCollision) {
-                validSpawn = true;
-            } else {
-                // Retry with new position
-                const angle = Math.random() * Math.PI * 2;
-                const dist = 28 + Math.random() * 12;
-                x = Math.max(-42, Math.min(42, player.position.x + Math.cos(angle) * dist));
-                z = Math.max(-42, Math.min(42, player.position.z + Math.sin(angle) * dist));
-                spawnAttempts++;
-            }
-        }
-    }
+    // Throttled: called on every spawn
+    logThrottled(`spawn-${enemyType.name}`, 500, 'SPAWN', 'enemy', {
+        type: enemyType.name,
+        health: typeData.health,
+        size: typeData.size
+    });
     
     const arenaScale = 1 + (gameState.currentArena - 1) * 0.15;
     const waveScale = 1 + (gameState.currentWave - 1) * 0.05;
@@ -646,9 +662,8 @@ export function spawnWaveEnemy() {
     // Behavior-specific properties
     if (typeData.behavior === 'shooter') {
         enemy.shootRange = typeData.shootRange;
-        // Convert ms cooldown to frames (60fps = 16.67ms per frame)
         enemy.shootCooldownFrames = Math.floor(typeData.shootCooldown / 16.67);
-        enemy.shootTimer = 0; // Frame counter
+        enemy.shootTimer = 0;
     }
     if (typeData.behavior === 'bouncer') {
         enemy.velocity.set(
@@ -670,10 +685,9 @@ export function spawnWaveEnemy() {
         enemy.explosionRadius = typeData.explosionRadius;
     }
     if (typeData.behavior === 'teleporter') {
-        // Convert ms cooldown to frames (60fps = 16.67ms per frame)
         enemy.teleportCooldownFrames = Math.floor(typeData.teleportCooldown / 16.67);
         enemy.teleportRange = typeData.teleportRange;
-        enemy.teleportTimer = 0; // Frame counter since last teleport
+        enemy.teleportTimer = 0;
         enemy.teleportWindupTimer = 0;
     }
     if (typeData.behavior === 'pillarHopper') {
@@ -690,8 +704,245 @@ export function spawnWaveEnemy() {
         }
     }
     
-    // Mark enemy as encountered for roster
+    // Mark enemy as encountered for roster (only once per type)
     markEnemyEncountered(enemyType.name);
+    
+    scene.add(enemy);
+    enemies.push(enemy);
+    
+    return enemy;
+}
+
+// School formation tracking
+let nextSchoolId = 1;
+let lastSchoolSpawnFrame = 0;
+
+// Check if enemy type can form schools
+function canSchoolType(typeName) {
+    if (!SCHOOL_CONFIG.enabled) return false;
+    return !SCHOOL_CONFIG.excludeTypes.includes(typeName);
+}
+
+// Count active schools (schools with a living leader)
+function countActiveSchools() {
+    const schoolIds = new Set();
+    for (const enemy of enemies) {
+        if (enemy.schoolId && enemy.isSchoolLeader) {
+            schoolIds.add(enemy.schoolId);
+        }
+    }
+    return schoolIds.size;
+}
+
+// Find the leader of a school
+export function findSchoolLeader(schoolId) {
+    return enemies.find(e => e.schoolId === schoolId && e.isSchoolLeader);
+}
+
+// Get school formation chance for current arena/wave
+function getSchoolChance() {
+    const arena = gameState.currentArena;
+    const wave = gameState.currentWave;
+    const arenaConfig = SCHOOL_CONFIG.chanceByWave[`arena${arena}`] || SCHOOL_CONFIG.chanceByWave.default;
+    return arenaConfig[wave] || arenaConfig[3] || 0;  // Use wave 3 as fallback for higher waves
+}
+
+// Calculate threat cost for an enemy type (local helper, mirrors waveSystem version)
+function getEnemyThreatCost(enemyType) {
+    const costs = THREAT_BUDGET.costs[enemyType];
+    if (!costs) return 20; // Default cost
+    return costs.durability + costs.damage;
+}
+
+// Spawn a school of enemies with leader/follower formation
+// Returns array of spawned enemies for budget tracking
+export function spawnSchool(centerX, centerZ, enemyType, schoolSize) {
+    const spawned = [];
+    const schoolId = nextSchoolId++;
+    const spacing = SCHOOL_CONFIG.formationSpacing;
+    
+    log('SPAWN', 'school', {
+        schoolId,
+        size: schoolSize,
+        type: enemyType.name,
+        activeSchools: countActiveSchools(),
+        maxSchools: SCHOOL_CONFIG.maxActiveSchools
+    });
+    
+    // Spawn leader at center
+    const leader = spawnEnemyAtPosition(enemyType, centerX, centerZ);
+    if (!leader) return spawned;
+    
+    leader.schoolId = schoolId;
+    leader.isSchoolLeader = true;
+    leader.formationOffset = { x: 0, z: 0 };
+    spawned.push(leader);
+    
+    // Spawn followers around leader in formation
+    for (let i = 1; i < schoolSize; i++) {
+        // Arrange followers in a V or ring pattern behind leader
+        const angle = Math.PI + (i % 2 === 0 ? 1 : -1) * (Math.ceil(i / 2) * 0.5);  // V formation
+        const dist = spacing * Math.ceil(i / 2);
+        
+        const offsetX = Math.cos(angle) * dist;
+        const offsetZ = Math.sin(angle) * dist;
+        
+        let x = centerX + offsetX;
+        let z = centerZ + offsetZ;
+        
+        // Clamp to arena bounds
+        x = Math.max(-42, Math.min(42, x));
+        z = Math.max(-42, Math.min(42, z));
+        
+        const follower = spawnEnemyAtPosition(enemyType, x, z);
+        if (follower) {
+            follower.schoolId = schoolId;
+            follower.isSchoolLeader = false;
+            follower.formationOffset = { x: offsetX, z: offsetZ };
+            spawned.push(follower);
+        }
+    }
+    
+    lastSchoolSpawnFrame = gameState.frameCount || 0;
+    return spawned;
+}
+
+// Handle leader death - promote follower or disband
+export function handleSchoolLeaderDeath(deadLeader) {
+    const schoolId = deadLeader.schoolId;
+    if (!schoolId) return;
+    
+    // Find all followers of this school
+    const followers = enemies.filter(e => e.schoolId === schoolId && !e.isSchoolLeader);
+    
+    log('SPAWN', 'school_leader_death', {
+        schoolId,
+        followers: followers.length,
+        behavior: SCHOOL_CONFIG.leaderDeathBehavior
+    });
+    
+    if (followers.length === 0) return;
+    
+    if (SCHOOL_CONFIG.leaderDeathBehavior === 'promote') {
+        // Promote first follower to leader
+        const newLeader = followers[0];
+        newLeader.isSchoolLeader = true;
+        newLeader.formationOffset = { x: 0, z: 0 };
+        
+        // Recalculate follower offsets relative to new leader
+        for (let i = 1; i < followers.length; i++) {
+            const follower = followers[i];
+            const angle = Math.PI + (i % 2 === 0 ? 1 : -1) * (Math.ceil(i / 2) * 0.5);
+            const dist = SCHOOL_CONFIG.formationSpacing * Math.ceil(i / 2);
+            follower.formationOffset = {
+                x: Math.cos(angle) * dist,
+                z: Math.sin(angle) * dist
+            };
+        }
+    } else {
+        // Disband - remove school affiliation from all followers
+        for (const follower of followers) {
+            follower.schoolId = null;
+            follower.isSchoolLeader = false;
+            follower.formationOffset = null;
+        }
+    }
+}
+
+export function spawnWaveEnemy() {
+    // Get arena-aware spawn position
+    const spawnPos = getArenaSpawnPosition(player.position, player.velocity);
+    let x = spawnPos.x;
+    let z = spawnPos.z;
+    
+    // Use budget-aware enemy selection if pool exists
+    const enemyType = selectEnemyByBudget();
+    if (!enemyType) return null; // No affordable enemy
+    
+    const typeData = enemyType.data;
+    
+    // Check for school formation spawn
+    const arena = gameState.currentArena;
+    const wave = gameState.currentWave;
+    const schoolChance = getSchoolChance();
+    const currentFrame = gameState.frameCount || 0;
+    const cooldownOk = (currentFrame - lastSchoolSpawnFrame) >= SCHOOL_CONFIG.spawnCooldownFrames;
+    const underSchoolCap = countActiveSchools() < SCHOOL_CONFIG.maxActiveSchools;
+    
+    const schoolRoll = Math.random();
+    const shouldSpawnSchool = SCHOOL_CONFIG.enabled && 
+                              cooldownOk &&
+                              underSchoolCap &&
+                              canSchoolType(enemyType.name) &&
+                              schoolRoll < schoolChance;
+    
+    // Throttled school chance log (only log successful spawns)
+    if (schoolChance > 0 && shouldSpawnSchool) {
+        logThrottled('school-chance', 2000, 'SPAWN', 'school_decision', {
+            chance: parseFloat((schoolChance * 100).toFixed(0)),
+            roll: parseFloat((schoolRoll * 100).toFixed(0)),
+            spawning: shouldSpawnSchool
+        });
+    }
+    
+    if (shouldSpawnSchool) {
+        // Spawn a school with leader/follower formation
+        const { min, max } = SCHOOL_CONFIG.schoolSize;
+        const schoolSize = min + Math.floor(Math.random() * (max - min + 1));
+        
+        // Check budget can afford school (at least 3 enemies for meaningful formation)
+        const cost = getEnemyThreatCost(enemyType.name);
+        const cognitive = THREAT_BUDGET.costs[enemyType.name]?.cognitive || 1;
+        const budgetRemaining = gameState.waveBudgetRemaining || 0;
+        const affordableCount = Math.min(schoolSize, Math.floor(budgetRemaining / cost));
+        
+        if (affordableCount >= 3) {
+            const spawned = spawnSchool(x, z, enemyType, affordableCount);
+            
+            // Deduct budget for extra enemies (first one handled by caller)
+            // waveSystem will deduct for spawned[0], so we deduct for spawned[1..n]
+            for (let i = 1; i < spawned.length; i++) {
+                gameState.waveBudgetRemaining -= cost;
+                gameState.waveCognitiveUsed += cognitive;
+                gameState.waveSpawnCount++;
+            }
+            
+            return spawned.length > 0 ? spawned[0] : null;
+        }
+        // Fall through to single spawn if can't afford school
+    }
+    
+    // Bouncer spawn validation - prevent spawning into immediate collision
+    if (typeData.behavior === 'bouncer') {
+        let spawnAttempts = 0;
+        let validSpawn = false;
+        
+        while (!validSpawn && spawnAttempts < 5) {
+            let immediateCollision = false;
+            for (const obs of obstacles) {
+                const c = obs.collisionData;
+                if (!c) continue;
+                if (x > c.minX - 2 && x < c.maxX + 2 &&
+                    z > c.minZ - 2 && z < c.maxZ + 2) {
+                    immediateCollision = true;
+                    break;
+                }
+            }
+            
+            if (!immediateCollision) {
+                validSpawn = true;
+            } else {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 28 + Math.random() * 12;
+                x = Math.max(-42, Math.min(42, player.position.x + Math.cos(angle) * dist));
+                z = Math.max(-42, Math.min(42, player.position.z + Math.sin(angle) * dist));
+                spawnAttempts++;
+            }
+        }
+    }
+    
+    // Spawn single enemy
+    const enemy = spawnEnemyAtPosition(enemyType, x, z);
     
     // Show tutorial callout for special enemies
     if (enemyType.name === 'pillarPolice') {
@@ -701,10 +952,7 @@ export function spawnWaveEnemy() {
         showTutorialCallout('teleporter', 'Watch for the destination marker!', 2000);
     }
     
-    scene.add(enemy);
-    enemies.push(enemy);
-    
-    return enemy; // Return for budget tracking
+    return enemy;
 }
 
 // Budget-aware enemy selection using wave pool and cognitive caps
@@ -729,6 +977,9 @@ function selectEnemyByBudget() {
         
         // Skip enemies gated by maxArena
         if (typeData.maxArena && arena > typeData.maxArena) continue;
+        
+        // Skip enemies gated by minWave (e.g., gruntTiny only in Wave 2+)
+        if (typeData.minWave && wave < typeData.minWave) continue;
         
         // Skip if not in wave pool (cognitive caps)
         if (pool && pool.length > 0 && !pool.includes(typeName)) continue;
@@ -1058,6 +1309,20 @@ export function updateEnemies(delta) {
             continue;
         }
         
+        // Handle freeze (boss transition safety)
+        if (enemy.frozen) {
+            enemy.frozenTimer--;
+            if (enemy.frozenTimer <= 0) {
+                enemy.frozen = false;
+                // Throttled: multiple enemies may unfreeze together
+                logThrottled('freeze-expire', 500, 'SAFETY', 'freeze_expired', {
+                    remainingFrozen: enemies.filter(e => e.frozen).length
+                });
+            }
+            // Skip movement/behavior while frozen
+            continue;
+        }
+        
         switch (enemy.behavior) {
             case 'chase': updateChaseEnemy(enemy); break;
             case 'shooter': updateShooterEnemy(enemy); break;
@@ -1067,6 +1332,22 @@ export function updateEnemies(delta) {
             case 'teleporter': updateTeleporterEnemy(enemy); break;
             case 'pillarHopper': updatePillarHopperEnemy(enemy); break;
             default: updateChaseEnemy(enemy);
+        }
+        
+        // School formation update - followers track their leader
+        if (enemy.schoolId && !enemy.isSchoolLeader && enemy.formationOffset) {
+            const leader = findSchoolLeader(enemy.schoolId);
+            if (leader) {
+                // Calculate target position (leader position + formation offset)
+                const targetX = leader.position.x + enemy.formationOffset.x;
+                const targetZ = leader.position.z + enemy.formationOffset.z;
+                
+                // Smoothly interpolate toward formation position
+                const tightness = SCHOOL_CONFIG.formationTightness;
+                enemy.position.x += (targetX - enemy.position.x) * tightness;
+                enemy.position.z += (targetZ - enemy.position.z) * tightness;
+            }
+            // If leader is dead, handleSchoolLeaderDeath will be called from damage system
         }
         
         // Shielded enemy "enrage" anti-camping mechanic
@@ -1803,6 +2084,11 @@ export function handleEnemyDeath(enemy) {
     if (gameState.combatStats) {
         const type = enemy.enemyType || 'unknown';
         gameState.combatStats.kills[type] = (gameState.combatStats.kills[type] || 0) + 1;
+    }
+    
+    // Handle school leader death - promote follower or disband
+    if (enemy.schoolId && enemy.isSchoolLeader) {
+        handleSchoolLeaderDeath(enemy);
     }
     
     // Spawn enemy-specific death VFX

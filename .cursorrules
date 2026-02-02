@@ -710,3 +710,94 @@ function restartGame() {
 - **Add SRI hashes for external scripts** (when available)
 - **Use crossorigin="anonymous"** for CDN resources
 - **Document how to regenerate hashes** if library is updated
+
+### 16. Observability & Debug Logging
+
+The game uses **loglevel** (CDN) with a thin wrapper (`js/systems/debugLog.js`) for structured debug logging.
+
+#### When to Log
+- **DO log**: State transitions, thresholds crossed, events (start/end/trigger)
+- **DO NOT log**: Every frame, inside tight loops, redundant data
+
+#### Tag Taxonomy
+
+| Tag | Purpose |
+|-----|---------|
+| WAVE | Wave lifecycle, modifiers, budgets |
+| SPAWN | Enemy/school spawns, choreography |
+| BOSS | Boss lifecycle, phases, retreat/return |
+| SCORE | Bonuses, calculations |
+| STATE | State machine transitions |
+| SAFETY | Caps, pauses, invariant violations |
+| PERF | Performance metrics (disabled by default) |
+
+#### Logger API
+
+```javascript
+import { log, logWarn, logOnce, logThrottled, assert } from '../systems/debugLog.js';
+
+// Standard info log
+log('BOSS', 'phase_transition', { from: 1, to: 2, hp: 500, trigger: 'threshold' });
+
+// One-time log (deduped by key)
+logOnce('boss-first-spawn', 'BOSS', 'first_spawn', { phase: 1 });
+
+// Throttled log (max once per interval)
+logThrottled('enemy-count', 1000, 'PERF', 'enemy_count', { count: 50 });
+
+// Assertion (warns if condition is false)
+assert(hp > 0, 'BOSS', 'hp_must_be_positive', { hp });
+```
+
+#### Configuration
+
+In `js/config/constants.js`:
+```javascript
+export const DEBUG_CONFIG = {
+    level: 'info',    // trace | debug | info | warn | error | silent
+    tags: {
+        WAVE: true,
+        SPAWN: true,
+        BOSS: true,
+        // ... toggle per-tag
+    }
+};
+```
+
+#### Good vs Bad Examples
+
+```javascript
+// BAD - logs every frame
+function updateBoss() {
+    console.log('Boss HP:', boss.health);
+}
+
+// GOOD - logs on transition only
+if (boss.health <= threshold && !boss.phaseTransitioned) {
+    log('BOSS', 'phase_threshold', { hp: boss.health, threshold });
+    boss.phaseTransitioned = true;
+}
+
+// BAD - ungated console.log
+console.log('[Spawn] Enemy spawned');
+
+// GOOD - uses logger with tag filtering
+log('SPAWN', 'enemy_spawned', { type: 'grunt', pos: { x, z } });
+```
+
+#### Troubleshooting Common Issues
+
+**Spawns feel too hard:**
+1. Enable tags: `WAVE`, `SPAWN`, `SAFETY`
+2. Check budget allocation at wave start
+3. Look for `[SAFETY] cap_hit` or `stress_pause` events
+
+**Boss phase desync:**
+1. Enable tags: `BOSS`, `STATE`
+2. Check `phase_transition` events for trigger reasons
+3. Verify `retreat_trigger` fires at correct HP
+
+**Waves softlock:**
+1. Enable tags: `WAVE`, `STATE`, `SPAWN`
+2. Check state machine transitions (should see `wave_clear`)
+3. Look for `[SAFETY]` warnings

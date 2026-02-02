@@ -18,6 +18,7 @@ import { resetDamageTime, setPlayerRef, clearDamageLog } from './systems/damage.
 import { initBadges, resetActiveBadges, updateStatBadges } from './systems/badges.js';
 import { initLeaderboard } from './systems/leaderboard.js';
 import { PulseMusic } from './systems/pulseMusic.js';
+import { initLogger, setGameStateRef, resetLogState, log } from './systems/debugLog.js';
 
 import { generateArena, updateHazardZones } from './arena/generator.js';
 
@@ -76,6 +77,7 @@ function cleanupGameState() {
     resetActiveBadges();
     clearEnemyGeometryCache();
     clearGeometryCache();
+    resetLogState();
     lastFrameTime = 0;
 }
 
@@ -102,6 +104,11 @@ function unlockMechanicsForArena(arenaNumber) {
 }
 
 function init() {
+    // Initialize debug logger
+    setGameStateRef(gameState);
+    initLogger();
+    log('STATE', 'init', { version: VERSION });
+    
     // Set document title from config
     document.title = GAME_TITLE.toUpperCase();
     const titleEl = document.querySelector('#start-screen h1');
@@ -476,12 +483,9 @@ function animate(currentTime) {
                     
                     // CRITICAL: Allow player movement during interactive dodge tutorial
                     // Player must be able to move out of the danger zone during demo_dodge_wait
-                    // #region agent log
                     if (currentBoss.aiState === 'demo_dodge_wait') {
-                        fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'main.js:479',message:'Calling updatePlayer during demo_dodge_wait',data:{bossState:currentBoss.aiState},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'PLAYER'})}).catch(()=>{});
                         updatePlayer(clampedDelta);
                     }
-                    // #endregion
                     
                     // Update cinematic camera during cutscene
                     // EXCEPTION: Use player camera during interactive dodge tutorial

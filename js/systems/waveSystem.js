@@ -1,10 +1,10 @@
 import { gameState } from '../core/gameState.js';
-import { enemies, getCurrentBoss } from '../core/entities.js';
+import { enemies, getCurrentBoss, setCurrentBoss } from '../core/entities.js';
 import { player } from '../entities/player.js';
 import { spawnWaveEnemy } from '../entities/enemies.js';
 import { spawnBoss, spawnIntroMinions, triggerDemoAbility, endDemoMode, prepareBossForCutscene, endCutsceneAndRepositionPlayer } from '../entities/boss.js';
 import { clearAllPickups, updateArenaPortal, clearArenaPortal, spawnBossEntrancePortal, freezeBossEntrancePortal, updateBossEntrancePortal } from './pickups.js';
-import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION } from '../config/constants.js';
+import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION, SPAWN_CHOREOGRAPHY } from '../config/constants.js';
 import { ARENA_CONFIG, getArenaWaves } from '../config/arenas.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
 import { generateArena } from '../arena/generator.js';
@@ -15,6 +15,7 @@ import {
     hideWaveAnnouncement, 
     showBossAnnouncement, 
     hideBossAnnouncement,
+    hideBossHealthBar,
     showUnlockNotification,
     showBadgeUnlock,
     showModifierAnnouncement,
@@ -23,6 +24,7 @@ import {
 } from '../ui/hud.js';
 import { scene } from '../core/scene.js';
 import { startCinematic, triggerSlowMo, endCinematic } from './visualFeedback.js';
+import { log, logOnce, logThrottled, assert } from './debugLog.js';
 
 // Timing constants (in frames at 60fps) - 3x longer for readability
 const WAVE_INTRO_FRAMES = 360;       // 6 seconds (3x original)
@@ -38,6 +40,7 @@ export function updateWaveSystem() {
         case WAVE_STATE.WAVE_CLEAR: handleWaveClear(); break;
         case WAVE_STATE.BOSS_INTRO: handleBossIntro(); break;
         case WAVE_STATE.BOSS_ACTIVE: handleBossActive(); break;
+        case WAVE_STATE.BOSS_RETREAT: handleBossRetreat(); break;  // Arena 1 chase
         case WAVE_STATE.BOSS_DEFEATED: handleBossDefeated(); break;
         case WAVE_STATE.ARENA_TRANSITION: handleArenaTransition(); break;
     }
@@ -70,7 +73,12 @@ function handleWaveIntro() {
         if (isLessonWave) waveType = 'lesson';
         else if (isExamWave) waveType = 'exam';
         
-        const baseBudget = THREAT_BUDGET.waveBudgets[waveType];
+        // Check for arena-specific budget overrides
+        const arenaOverrides = THREAT_BUDGET.arenaBudgetOverrides?.[gameState.currentArena]?.[waveType];
+        const baseBudget = {
+            ...THREAT_BUDGET.waveBudgets[waveType],
+            ...arenaOverrides  // Override with arena-specific values if present
+        };
         const arenaScale = THREAT_BUDGET.arenaScaling[gameState.currentArena] || 1.0;
         
         // Select wave modifier (if any)
@@ -119,6 +127,21 @@ function handleWaveIntro() {
         // Initialize enemy pool for cognitive caps
         initializeWaveEnemyPool();
         
+        // Initialize spawn choreography for this wave
+        initializeWaveChoreography();
+        
+        // Track wave start time for speed bonus calculation
+        gameState.waveStartTime = Date.now();
+        
+        // Log wave start with full context
+        log('WAVE', 'start', {
+            wave: gameState.currentWave,
+            budget: gameState.waveBudgetRemaining,
+            cognitiveMax: gameState.waveCognitiveMax,
+            modifier: gameState.waveModifier || 'none',
+            waveType: getWaveType(gameState.currentWave, getMaxWaves())
+        });
+        
         // Legacy compatibility - estimate enemy count for UI
         const avgCost = 20;
         gameState.enemiesToSpawn = Math.ceil(gameState.waveBudgetRemaining / avgCost);
@@ -126,6 +149,50 @@ function handleWaveIntro() {
         
         hideWaveAnnouncement();
     }
+}
+
+// Initialize spawn choreography for the wave
+function initializeWaveChoreography() {
+    const arena = gameState.currentArena;
+    const wave = gameState.currentWave;
+    
+    // Check if choreography is enabled and configured for this arena/wave
+    const arenaConfig = SPAWN_CHOREOGRAPHY[`arena${arena}`];
+    const choreographyType = arenaConfig?.[wave] || 'random';
+    
+    gameState.waveChoreography = {
+        type: choreographyType,
+        primaryDirection: null,
+        secondaryDirection: null
+    };
+    
+    if (choreographyType === 'random' || !SPAWN_CHOREOGRAPHY.enabled) {
+        return; // No choreography needed
+    }
+    
+    const directions = SPAWN_CHOREOGRAPHY.directions;
+    
+    if (choreographyType === 'lane') {
+        // Pick a random direction for the lane flood
+        gameState.waveChoreography.primaryDirection = directions[Math.floor(Math.random() * directions.length)];
+    } else if (choreographyType === 'pincer') {
+        // Pick two opposite directions
+        const primaryIndex = Math.floor(Math.random() * 2); // 0 = north/south, 1 = east/west
+        if (primaryIndex === 0) {
+            gameState.waveChoreography.primaryDirection = 'north';
+            gameState.waveChoreography.secondaryDirection = 'south';
+        } else {
+            gameState.waveChoreography.primaryDirection = 'east';
+            gameState.waveChoreography.secondaryDirection = 'west';
+        }
+    }
+    
+    // Log wave spawn pattern
+    log('SPAWN', 'choreography_init', {
+        pattern: choreographyType,
+        primary: gameState.waveChoreography.primaryDirection,
+        secondary: gameState.waveChoreography.secondaryDirection
+    });
 }
 
 // Select wave modifier based on arena and wave
@@ -302,7 +369,11 @@ function handleWaveActive() {
                 // No affordable enemy available - exhaust budget to prevent infinite loop
                 // Rate-limit warning to avoid console spam (only warn once per wave)
                 if (gameState.waveBudgetRemaining > 0 && !gameState.waveSpawnWarned) {
-                    console.warn('[WaveSystem] No affordable enemy found, budget:', gameState.waveBudgetRemaining, 'cognitive:', gameState.waveCognitiveUsed, '/', gameState.waveCognitiveMax);
+                    logOnce(`wave-${gameState.currentWave}-no-affordable`, 'SAFETY', 'no_affordable_enemy', {
+                        budget: gameState.waveBudgetRemaining,
+                        cognitiveUsed: gameState.waveCognitiveUsed,
+                        cognitiveMax: gameState.waveCognitiveMax
+                    });
                     gameState.waveSpawnWarned = true;
                 }
                 gameState.waveBudgetRemaining = 0;
@@ -354,6 +425,30 @@ function handleWaveClear() {
             PulseMusic.onBreatherEnd();
         }
         
+        // Calculate and award speed bonus for fast wave clear
+        if (gameState.waveStartTime) {
+            const clearTimeSeconds = (Date.now() - gameState.waveStartTime) / 1000;
+            // Bonus formula: up to 300 points for sub-10s clear, 0 for 30s+
+            const speedBonus = Math.max(0, Math.floor((30 - clearTimeSeconds) * 10));
+            
+            log('SCORE', 'speed_bonus', {
+                wave: gameState.currentWave,
+                clearTime: parseFloat(clearTimeSeconds.toFixed(1)),
+                bonus: speedBonus
+            });
+            
+            if (speedBonus > 0) {
+                gameState.score += speedBonus;
+            }
+        }
+        
+        // Log wave clear
+        log('WAVE', 'clear', {
+            wave: gameState.currentWave,
+            budgetRemaining: gameState.waveBudgetRemaining,
+            modifier: gameState.waveModifier || 'none'
+        });
+        
         // Track perfect wave (no damage taken)
         if (gameState.combatStats && gameState.combatStats.waveDamageTaken === 0) {
             gameState.combatStats.perfectWaves++;
@@ -366,6 +461,26 @@ function handleWaveClear() {
     gameState.waveTimer++;
     
     if (gameState.waveTimer > WAVE_CLEAR_FRAMES) {
+        // Check for Arena 1 boss chase - boss returns after segment waves
+        if (shouldBossReturn()) {
+            // Prepare next boss phase
+            const chase = gameState.arena1ChaseState;
+            chase.bossPhaseToSpawn = chase.bossEncounterCount + 1;
+            
+            log('BOSS', 'return_triggered', {
+                phase: chase.bossPhaseToSpawn,
+                persistentHP: chase.persistentBossHealth,
+                segment: chase.segment,
+                encounters: chase.bossEncounterCount
+            });
+            
+            gameState.waveState = WAVE_STATE.BOSS_INTRO;
+            gameState.waveTimer = 0;
+            updateUI();
+            return;
+        }
+        
+        // Normal wave progression
         const maxWaves = getMaxWaves();
         if (gameState.currentWave >= maxWaves) {
             gameState.waveState = WAVE_STATE.BOSS_INTRO;
@@ -391,18 +506,12 @@ function handleBossIntro() {
     // Spawn entrance portal 3 seconds before boss (180 frames)
     const PORTAL_SPAWN_FRAMES = BOSS_INTRO_FRAMES - 180;
     if (gameState.waveTimer === PORTAL_SPAWN_FRAMES) {
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waveSystem.js:395',message:'Spawning entrance portal',data:{waveTimer:gameState.waveTimer,portalSpawnFrames:PORTAL_SPAWN_FRAMES,bossIntroFrames:BOSS_INTRO_FRAMES},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         // Spawn entrance portal near the wall (original boss spawn location)
         spawnBossEntrancePortal(new THREE.Vector3(0, 0, -35));
     }
     
     // Update entrance portal animation during intro
     if (gameState.waveTimer > PORTAL_SPAWN_FRAMES && gameState.waveTimer <= BOSS_INTRO_FRAMES) {
-        // #region agent log
-        if (gameState.waveTimer === PORTAL_SPAWN_FRAMES + 1) fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waveSystem.js:402',message:'First portal update (NOT YET FROZEN)',data:{waveTimer:gameState.waveTimer},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         updateBossEntrancePortal();
     }
     
@@ -416,9 +525,6 @@ function handleBossIntro() {
         hideBossAnnouncement();
         
         // Freeze the entrance portal now that boss has emerged
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/4f227216-1057-4ff3-b898-68afb23010ca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'waveSystem.js:415',message:'Freezing entrance portal',data:{waveTimer:gameState.waveTimer},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         freezeBossEntrancePortal();
         
         // Trigger cinematic camera focus on boss
@@ -541,6 +647,153 @@ function handleBossActive() {
         gameState.waveState = WAVE_STATE.BOSS_DEFEATED;
         gameState.waveTimer = 0;
     }
+}
+
+// ==================== BOSS CHASE: HELPER FUNCTIONS ====================
+// Check if boss should return based on Arena 1 chase state
+function shouldBossReturn() {
+    const chase = gameState.arena1ChaseState;
+    if (!chase?.enabled) return false;
+    
+    // All encounters complete - use normal boss flow
+    if (chase.bossEncounterCount >= 3) return false;
+    
+    // Calculate waves completed in current segment
+    const segmentWaveTarget = getSegmentWaveTarget(chase.segment);
+    
+    // Boss returns when current wave equals the segment target
+    // (Wave numbers: P1 after wave 3, P2 after wave 5, P3 after wave 7)
+    const shouldReturn = gameState.currentWave >= segmentWaveTarget;
+    
+    logOnce(`boss-return-check-w${gameState.currentWave}`, 'BOSS', 'return_check', {
+        wave: gameState.currentWave,
+        segment: chase.segment,
+        target: segmentWaveTarget,
+        encounters: chase.bossEncounterCount,
+        shouldReturn
+    });
+    
+    return shouldReturn;
+}
+
+// Get the wave number that triggers boss return for a segment
+function getSegmentWaveTarget(segment) {
+    const chase = gameState.arena1ChaseState;
+    if (!chase) return 999;
+    
+    // Sum up waves from previous segments
+    let totalWaves = 0;
+    for (let s = 1; s <= segment; s++) {
+        totalWaves += chase.segmentWaves[s] || 2;
+    }
+    return totalWaves;
+}
+
+// ==================== BOSS CHASE: RETREAT STATE ====================
+// Handles boss retreat animation and transition back to waves (Arena 1)
+const BOSS_RETREAT_FRAMES = 60;  // 1 second retreat animation
+
+function handleBossRetreat() {
+    const boss = getCurrentBoss();
+    
+    gameState.waveTimer++;
+    
+    // Animate boss retreat (shrink + rise)
+    if (boss && boss.isRetreating) {
+        boss.retreatAnimTimer = (boss.retreatAnimTimer || 0) + 1;
+        
+        // Throttled retreat animation log (avoid spam)
+        logThrottled('retreat-anim', 500, 'BOSS', 'retreat_animation', {
+            frame: boss.retreatAnimTimer,
+            totalFrames: BOSS_RETREAT_FRAMES,
+            scale: parseFloat(boss.scale.x.toFixed(2))
+        });
+        
+        // Shrink and float up
+        boss.position.y += 0.2;
+        boss.scale.multiplyScalar(0.95);
+        
+        // Spin effect
+        boss.rotation.y += 0.1;
+    }
+    
+    // Complete retreat after animation
+    if (gameState.waveTimer >= BOSS_RETREAT_FRAMES) {
+        completeRetreat(boss);
+    }
+}
+
+function completeRetreat(boss) {
+    // Remove boss from scene
+    if (boss) {
+        scene.remove(boss);
+        const index = enemies.indexOf(boss);
+        if (index > -1) enemies.splice(index, 1);
+        
+        // Clean up boss reference
+        setCurrentBoss(null);
+    }
+    
+    // Update chase state
+    if (gameState.arena1ChaseState) {
+        gameState.arena1ChaseState.segment++;
+        gameState.arena1ChaseState.bossEncounterCount++;
+        
+        log('BOSS', 'retreat_complete', {
+            segment: gameState.arena1ChaseState.segment,
+            encounters: gameState.arena1ChaseState.bossEncounterCount,
+            persistentHP: gameState.arena1ChaseState.persistentBossHealth
+        });
+    }
+    
+    // Clear enemies near boss spawn area for safety
+    clearEnemiesNearCenter();
+    
+    // Freeze remaining enemies briefly
+    freezeAllEnemies(60);  // 1 second freeze
+    
+    // Hide boss health bar
+    hideBossHealthBar();
+    
+    // Reset boss active flag
+    gameState.bossActive = false;
+    
+    // Return to waves - advance to next wave
+    gameState.currentWave++;
+    gameState.waveState = WAVE_STATE.WAVE_INTRO;
+    gameState.waveTimer = 0;
+    
+    log('STATE', 'boss_return_to_waves', { nextWave: gameState.currentWave });
+}
+
+// Helper: Clear enemies near arena center (boss spawn/despawn safety)
+function clearEnemiesNearCenter(radius = 15) {
+    let cleared = 0;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        if (enemy.isBoss) continue;
+        
+        const dist = Math.sqrt(enemy.position.x ** 2 + enemy.position.z ** 2);
+        if (dist < radius) {
+            scene.remove(enemy);
+            enemies.splice(i, 1);
+            cleared++;
+        }
+    }
+    log('SAFETY', 'center_cleared', { removed: cleared, radius });
+}
+
+// Helper: Freeze all non-boss enemies for a duration
+function freezeAllEnemies(frames) {
+    let frozenCount = 0;
+    for (const enemy of enemies) {
+        if (!enemy.isBoss) {
+            enemy.frozen = true;
+            enemy.frozenTimer = frames;
+            frozenCount++;
+        }
+    }
+    log('SAFETY', 'enemies_frozen', { count: frozenCount, frames });
 }
 
 function handleBossDefeated() {
