@@ -135,13 +135,10 @@ async function init() {
     const titleEl = document.querySelector('#start-screen h1');
     if (titleEl) titleEl.textContent = GAME_TITLE.toUpperCase();
     
-    // Show version display in debug mode
-    if (DEBUG) {
-        const versionEl = document.getElementById('version-display');
-        if (versionEl) {
-            versionEl.textContent = `v${VERSION}`;
-            versionEl.style.display = 'block';
-        }
+    // Show version display
+    const versionEl = document.getElementById('version-display');
+    if (versionEl) {
+        versionEl.textContent = `v${VERSION}`;
     }
     
     initScene();
