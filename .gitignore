@@ -3,5 +3,8 @@ todo.txt
 node_modules/
 dist/
 
-# Local debug config (never commit - enables debug mode on localhost)
+# Environment config (never commit - contains secrets)
+.env
+
+# Legacy debug config (now replaced by .env)
 js/config/debug.local.js

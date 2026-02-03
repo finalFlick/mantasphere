@@ -3,23 +3,34 @@ export const GAME_TITLE = 'Manta Sphere';
 export const VERSION = '0.2.4';  // Semantic versioning - see VERSION file and .cursorrules
 export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_';
 
-// ==================== SECURE DEBUG MODE ====================
-// Debug requires BOTH conditions (unhackable in production):
-//   1. Running on localhost/127.0.0.1
-//   2. js/config/debug.local.js file exists (gitignored)
-// To enable: copy debug.local.example.js to debug.local.js
+// ==================== BUILD-TIME ENVIRONMENT CONFIG ====================
+// These globals are injected by esbuild at build time from .env file
+// Dev build (npm run dev): ENV_DEBUG_SECRET=true
+// Prod build (npm run build): ENV_DEBUG_SECRET=false
+// Unbundled dev (index.dev.html): window.__DEV_MODE__ = true
+// See .env.example for configuration template
+
+/* global ENV_DEBUG_SECRET, ENV_PLAYTEST_URL, ENV_PLAYTEST_TOKEN */
+// Build-injected globals (exist when bundled)
+// Falls back to window.__DEV_MODE__ for unbundled dev
+const DEBUG_SECRET = typeof ENV_DEBUG_SECRET !== 'undefined' 
+    ? ENV_DEBUG_SECRET 
+    : (typeof window !== 'undefined' && window.__DEV_MODE__) || false;
+const PLAYTEST_URL = typeof ENV_PLAYTEST_URL !== 'undefined' ? ENV_PLAYTEST_URL : '';
+const PLAYTEST_TOKEN = typeof ENV_PLAYTEST_TOKEN !== 'undefined' ? ENV_PLAYTEST_TOKEN : '';
+
+// Playtest feedback configuration (from .env)
+export const PLAYTEST_CONFIG = PLAYTEST_URL ? {
+    url: PLAYTEST_URL,
+    token: PLAYTEST_TOKEN
+} : null;
+
+// ==================== DEBUG MODE ====================
 let DEBUG_ENABLED = false;
 
-// Synchronous localhost check (debug.local.js import happens async in main.js)
-function isLocalhost() {
-    if (typeof window === 'undefined') return false;
-    const host = window.location.hostname;
-    return host === 'localhost' || host === '127.0.0.1';
-}
-
-// Export function to enable debug after async import succeeds
+// Enable debug mode if build was configured with DEBUG_SECRET=true
 export function enableDebugMode() {
-    if (!isLocalhost()) return false;
+    if (!DEBUG_SECRET) return false;
     DEBUG_ENABLED = true;
     DEBUG_CONFIG.level = 'info';
     DEBUG_CONFIG.tags.WAVE = true;
@@ -28,7 +39,7 @@ export function enableDebugMode() {
     DEBUG_CONFIG.tags.SCORE = true;
     DEBUG_CONFIG.tags.STATE = true;
     DEBUG_CONFIG.tags.SAFETY = true;
-    console.log('%c[DEBUG MODE]', 'color: #ffdd44; font-weight: bold', 'Secure debug enabled (localhost + debug.local.js)');
+    console.log('%c[DEBUG MODE]', 'color: #ffdd44; font-weight: bold', 'Enabled (dev build)');
     return true;
 }
 
@@ -47,7 +58,10 @@ export const DEBUG_CONFIG = {
         SCORE: false,
         STATE: false,
         SAFETY: false,
-        PERF: false
+        PERF: false,
+        DEBUG: false,    // Debug menu operations
+        MUSIC: false,    // PulseMusic system
+        PLAYTEST: false  // Playtest feedback system
     }
 };
 

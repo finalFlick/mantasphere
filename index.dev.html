@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MANTA SPHERE</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #game-container { width: 100vw; height: 100vh; position: relative; }
+        
+        /* HUD */
+        #hud { position: absolute; top: 0; left: 0; right: 0; padding: 20px; pointer-events: none; z-index: 100; }
+        .hud-top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .hud-left, .hud-right { background: rgba(0, 0, 0, 0.7); padding: 15px 20px; border-radius: 10px; color: white; }
+        .hud-center { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 25px; border-radius: 10px; color: white; text-align: center; }
+        .arena-info { font-size: 14px; color: #ffdd44; margin-bottom: 5px; }
+        .wave-info { font-size: 18px; font-weight: bold; }
+        .stat-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-value { font-size: 24px; font-weight: bold; }
+        .health-bar-container { width: 200px; height: 20px; background: #333; border-radius: 10px; overflow: hidden; margin-top: 5px; }
+        .health-bar { height: 100%; background: linear-gradient(90deg, #ff4444, #ff6666); transition: width 0.3s ease; }
+        .xp-bar-container { width: 200px; height: 12px; background: #333; border-radius: 6px; overflow: hidden; margin-top: 5px; }
+        .xp-bar { height: 100%; background: linear-gradient(90deg, #44ff44, #88ff88); transition: width 0.3s ease; }
+        .level-display { color: #ffdd44; font-size: 18px; margin-top: 5px; }
+        
+        /* Badge Panel */
+        #badge-panel { display: flex; gap: 5px; margin-top: 10px; flex-wrap: wrap; max-width: 200px; }
+        .badge-icon { width: 28px; height: 28px; background: rgba(0,0,0,0.5); border: 2px solid #333; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; opacity: 0.4; transition: all 0.3s ease; }
+        .badge-icon.active { opacity: 1; box-shadow: 0 0 8px currentColor; }
+        
+        /* Crosshair */
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 20px; height: 20px; pointer-events: none; z-index: 100; }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.8); }
+        #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+        #crosshair::after { width: 100%; height: 2px; top: 50%; transform: translateY(-50%); }
+        
+        /* Upgrade Menu */
+        #upgrade-menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); padding: 30px; border-radius: 15px; border: 2px solid #ffdd44; display: none; z-index: 200; pointer-events: auto; }
+        #upgrade-menu h2 { color: #ffdd44; text-align: center; margin-bottom: 20px; font-size: 28px; }
+        .upgrade-options { display: flex; gap: 15px; }
+        .upgrade-card { width: 180px; padding: 20px; background: linear-gradient(135deg, #1a1a2e, #16213e); border: 2px solid #444; border-radius: 10px; cursor: pointer; transition: all 0.3s ease; text-align: center; color: white; }
+        .upgrade-card:hover { border-color: #ffdd44; transform: translateY(-5px); box-shadow: 0 10px 30px rgba(255, 221, 68, 0.3); }
+        .upgrade-icon { font-size: 40px; margin-bottom: 10px; }
+        .upgrade-name { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #ffdd44; }
+        .upgrade-desc { font-size: 12px; color: #aaa; }
+        
+        /* Start Screen */
+        #start-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(135deg, #0a0a1a, #1a1a3e); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 300; color: white; }
+        #start-screen-content { position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; }
+        #start-screen h1 { font-size: 64px; color: #ffdd44; text-shadow: 0 0 30px rgba(255, 221, 68, 0.5); margin-bottom: 20px; letter-spacing: 4px; }
+        #start-screen p { font-size: 18px; color: #888; margin-bottom: 40px; }
+        .start-buttons { display: flex; gap: 15px; margin-bottom: 30px; }
+        #start-btn { padding: 20px 60px; font-size: 24px; background: linear-gradient(135deg, #ffdd44, #ffaa00); border: none; border-radius: 10px; cursor: pointer; color: #000; font-weight: bold; transition: all 0.3s ease; }
+        #start-btn:hover { transform: scale(1.1); box-shadow: 0 10px 40px rgba(255, 221, 68, 0.5); }
+        .secondary-btn { padding: 15px 30px; font-size: 16px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: #aaa; font-weight: bold; transition: all 0.3s ease; }
+        .secondary-btn:hover { border-color: #ffdd44; color: #ffdd44; }
+        .controls-info { margin-top: 20px; text-align: center; color: #666; font-size: 14px; }
+        .controls-info span { display: inline-block; background: #333; padding: 5px 12px; border-radius: 5px; margin: 3px; }
+        
+        /* Mastery Panel on Start Screen */
+        #mastery-panel { display: flex; gap: 10px; margin-top: 30px; flex-wrap: wrap; justify-content: center; }
+        .mastery-badge { display: flex; flex-direction: column; align-items: center; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; opacity: 0.3; }
+        .mastery-badge.unlocked { opacity: 1; background: rgba(255,221,68,0.1); border: 1px solid rgba(255,221,68,0.3); }
+        .mastery-icon { font-size: 24px; }
+        .mastery-name { font-size: 10px; color: #888; margin-top: 5px; }
+        .mastery-badge.unlocked .mastery-name { color: #ffdd44; }
+        
+        /* Game Over */
+        #game-over { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); padding: 40px 60px; border-radius: 15px; border: 2px solid #ff4444; display: none; z-index: 250; text-align: center; color: white; max-height: 90vh; overflow-y: auto; }
+        #game-over h2 { color: #ff4444; font-size: 48px; margin-bottom: 20px; }
+        #death-recap { background: rgba(255, 68, 68, 0.1); border: 1px solid rgba(255, 68, 68, 0.3); border-radius: 10px; padding: 15px; margin-bottom: 20px; text-align: left; }
+        #death-recap h3 { color: #ff8888; font-size: 16px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        #death-recap-list { font-size: 14px; }
+        .death-entry { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .death-entry:last-child { border-bottom: none; }
+        .death-entry.killing-blow { color: #ff4444; font-weight: bold; }
+        .death-entry .source { color: #ffaa88; }
+        .death-entry .amount { color: #ff6666; }
+        .death-entry .fatal { color: #ff0000; font-size: 10px; background: rgba(255, 0, 0, 0.3); padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
+        #death-tip { margin-top: 12px; padding: 10px; background: rgba(68, 136, 255, 0.2); border-radius: 6px; font-size: 13px; color: #88aaff; }
+        #death-tip::before { content: 'TIP: '; font-weight: bold; color: #4488ff; }
+        #combat-recap { background: rgba(68, 136, 255, 0.1); border: 1px solid rgba(68, 136, 255, 0.3); border-radius: 10px; padding: 15px; margin: 15px 0; }
+        #combat-recap h3 { color: #88aaff; font-size: 14px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        #combat-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; text-align: left; }
+        .stat-item { display: flex; justify-content: space-between; padding: 4px 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; }
+        .stat-item .label { color: #888; }
+        .stat-item .value { color: #fff; font-weight: bold; }
+        #performance-grade { margin-top: 12px; font-size: 24px; font-weight: bold; text-align: center; }
+        #performance-grade.grade-S { color: #ffdd44; text-shadow: 0 0 10px rgba(255, 221, 68, 0.5); }
+        #performance-grade.grade-A { color: #44ff88; }
+        #performance-grade.grade-B { color: #44aaff; }
+        #performance-grade.grade-C { color: #ff8844; }
+        #performance-grade.grade-D { color: #ff4444; }
+        .final-stats { margin: 20px 0; font-size: 18px; }
+        .final-stats div { margin: 10px 0; }
+        #restart-btn { padding: 15px 40px; font-size: 20px; background: linear-gradient(135deg, #ff4444, #ff6666); border: none; border-radius: 10px; cursor: pointer; color: white; font-weight: bold; margin-top: 20px; transition: all 0.3s ease; }
+        #restart-btn:hover { transform: scale(1.05); }
+        
+        /* Kill Counter */
+        #kill-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 30px; border-radius: 20px; color: white; font-size: 18px; z-index: 100; }
+        
+        /* Damage Flash */
+        #damage-flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 0, 0, 0.3); pointer-events: none; opacity: 0; z-index: 50; transition: opacity 0.1s ease; }
+        
+        /* Pause */
+        #pause-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); padding: 30px 50px; border-radius: 15px; color: white; font-size: 24px; text-align: center; z-index: 150; display: none; }
+        #pause-indicator p { margin-top: 15px; font-size: 16px; color: #888; }
+        
+        /* Wave Announcement */
+        #wave-announcement { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; z-index: 120; opacity: 0; transition: opacity 0.3s ease; }
+        #wave-announcement.visible { opacity: 1; }
+        #wave-announcement .wave-text { font-size: 64px; font-weight: bold; color: #ffdd44; text-shadow: 0 0 30px rgba(255, 221, 68, 0.7); }
+        #wave-announcement .arena-text { font-size: 24px; color: #aaa; margin-top: 10px; }
+        #wave-preview { margin-top: 20px; }
+        #wave-threat { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        #wave-threat.threat-low { background: rgba(68, 255, 68, 0.3); color: #44ff44; border: 1px solid rgba(68, 255, 68, 0.5); }
+        #wave-threat.threat-medium { background: rgba(255, 221, 68, 0.3); color: #ffdd44; border: 1px solid rgba(255, 221, 68, 0.5); }
+        #wave-threat.threat-high { background: rgba(255, 136, 68, 0.3); color: #ff8844; border: 1px solid rgba(255, 136, 68, 0.5); }
+        #wave-threat.threat-extreme { background: rgba(255, 68, 68, 0.3); color: #ff4444; border: 1px solid rgba(255, 68, 68, 0.5); animation: threat-pulse 0.5s infinite; }
+        @keyframes threat-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        #wave-enemy-icons { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+        .enemy-icon { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5); }
+        #wave-modifier { margin-top: 8px; font-size: 16px; font-weight: bold; color: #ff8844; text-shadow: 0 0 10px rgba(255, 136, 68, 0.5); }
+        
+        /* Boss Health Bar */
+        #boss-health-container { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 400px; background: rgba(0, 0, 0, 0.8); padding: 15px 20px; border-radius: 10px; border: 2px solid #ff4444; display: none; z-index: 100; }
+        #boss-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        #boss-name { color: #ff4444; font-size: 20px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; }
+        #boss-phase { color: #ffaa44; font-size: 16px; font-weight: bold; padding: 2px 8px; border-radius: 4px; background: rgba(255, 170, 68, 0.2); }
+        #boss-phase.phase-2 { color: #ff8844; background: rgba(255, 136, 68, 0.3); }
+        #boss-phase.phase-3 { color: #ff4444; background: rgba(255, 68, 68, 0.4); animation: phase-pulse 0.5s infinite; }
+        @keyframes phase-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        #boss-health-bar-bg { width: 100%; height: 20px; background: #333; border-radius: 10px; overflow: hidden; }
+        #boss-health-bar { height: 100%; background: linear-gradient(90deg, #ff2222, #ff6644); transition: width 0.3s ease; width: 100%; }
+        #boss-shield-container { margin-top: 8px; display: none; }
+        #boss-shield-bar-bg { width: 100%; height: 8px; background: #222; border-radius: 4px; overflow: hidden; }
+        #boss-shield-bar { height: 100%; background: linear-gradient(90deg, #4488ff, #66aaff); transition: width 0.3s ease; width: 100%; }
+        #boss-shield-label { display: flex; justify-content: space-between; font-size: 12px; color: #4488ff; margin-top: 4px; }
+        #boss-exposed { display: none; text-align: center; margin-top: 8px; padding: 6px; background: rgba(255, 221, 68, 0.2); border-radius: 6px; color: #ffdd44; font-weight: bold; font-size: 14px; animation: exposed-flash 0.3s infinite; }
+        @keyframes exposed-flash { 0%, 100% { opacity: 1; background: rgba(255, 221, 68, 0.2); } 50% { opacity: 0.8; background: rgba(255, 221, 68, 0.4); } }
+        
+        /* Boss 6 Cycle Indicator */
+        #boss-cycle-indicator { display: none; text-align: center; margin-top: 10px; padding: 8px 16px; background: rgba(0, 0, 0, 0.6); border-radius: 6px; border: 2px solid #ffffff; color: #ffffff; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; transition: all 0.3s ease; }
+        
+        /* Boss 6 Cycle Announcement (flash popup) */
+        #cycle-announcement { position: absolute; top: 25%; left: 50%; transform: translateX(-50%); font-size: 28px; font-weight: bold; text-transform: uppercase; letter-spacing: 4px; z-index: 150; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; background: rgba(0, 0, 0, 0.8); padding: 15px 30px; border-radius: 10px; }
+        #cycle-announcement.visible { opacity: 1; animation: cycle-pulse 0.5s ease-out; }
+        @keyframes cycle-pulse { 0% { transform: translateX(-50%) scale(1.2); } 100% { transform: translateX(-50%) scale(1); } }
+        
+        /* Unlock Notification */
+        #unlock-notification { position: absolute; top: 30%; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, rgba(68, 255, 68, 0.9), rgba(34, 180, 34, 0.9)); padding: 20px 40px; border-radius: 15px; color: white; font-size: 24px; font-weight: bold; text-align: center; z-index: 130; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
+        #unlock-notification.visible { opacity: 1; }
+        #unlock-notification .unlock-title { font-size: 16px; color: rgba(255,255,255,0.8); margin-bottom: 5px; }
+        
+        /* Badge Unlock Notification */
+        #badge-unlock { position: absolute; top: 20%; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, rgba(255, 221, 68, 0.95), rgba(255, 170, 0, 0.95)); padding: 25px 50px; border-radius: 15px; color: #000; text-align: center; z-index: 135; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
+        #badge-unlock.visible { opacity: 1; }
+        #badge-unlock .badge-unlock-title { font-size: 14px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; }
+        #badge-unlock-icon { font-size: 48px; }
+        #badge-unlock-name { font-size: 28px; font-weight: bold; margin: 10px 0 5px; }
+        #badge-unlock-desc { font-size: 14px; opacity: 0.8; }
+        
+        /* Leaderboard Screen */
+        #leaderboard-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 350; color: white; }
+        #leaderboard-screen h2 { font-size: 36px; color: #ffdd44; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 3px; }
+        #leaderboard-entries { width: 600px; max-height: 400px; overflow-y: auto; }
+        .leaderboard-row { display: flex; justify-content: space-between; padding: 12px 20px; background: rgba(255,255,255,0.05); margin-bottom: 5px; border-radius: 8px; font-size: 16px; }
+        .leaderboard-row.top-three { background: rgba(255, 221, 68, 0.1); border: 1px solid rgba(255, 221, 68, 0.3); }
+        .lb-rank { width: 50px; color: #ffdd44; font-weight: bold; }
+        .lb-name { width: 80px; font-weight: bold; }
+        .lb-score { width: 100px; color: #44ff44; text-align: right; }
+        .lb-arena { width: 80px; color: #888; text-align: center; }
+        .lb-badges { width: 100px; text-align: center; }
+        .lb-time { width: 60px; color: #888; text-align: right; }
+        .leaderboard-empty { text-align: center; color: #666; padding: 40px; }
+        #close-leaderboard { margin-top: 30px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        #close-leaderboard:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* High Score Entry */
+        #high-score-entry { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 290; color: white; }
+        #high-score-entry h2 { font-size: 36px; color: #ffdd44; margin-bottom: 10px; }
+        .hs-subtitle { font-size: 18px; color: #888; margin-bottom: 30px; }
+        #hs-rank { font-size: 48px; color: #44ff44; margin-bottom: 10px; }
+        #hs-score { font-size: 24px; margin-bottom: 30px; }
+        #hs-name-input { padding: 15px 20px; font-size: 24px; text-align: center; text-transform: uppercase; width: 150px; background: #222; border: 2px solid #444; border-radius: 10px; color: white; outline: none; }
+        #hs-name-input:focus { border-color: #ffdd44; }
+        #hs-submit { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: linear-gradient(135deg, #ffdd44, #ffaa00); border: none; border-radius: 10px; cursor: pointer; color: #000; font-weight: bold; transition: all 0.3s ease; }
+        #hs-submit:hover { transform: scale(1.05); }
+        
+        /* Badge Collection Screen */
+        #badge-collection { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 350; color: white; }
+        #badge-collection h2 { font-size: 36px; color: #ffdd44; margin-bottom: 30px; }
+        #badge-collection-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 500px; }
+        .collection-badge { padding: 20px; background: rgba(255,255,255,0.05); border-radius: 15px; text-align: center; transition: all 0.3s ease; }
+        .collection-badge.locked { opacity: 0.4; }
+        .collection-badge.unlocked { background: rgba(255, 221, 68, 0.1); border: 1px solid rgba(255, 221, 68, 0.3); }
+        .collection-badge-icon { font-size: 40px; margin-bottom: 10px; }
+        .collection-badge-name { font-size: 16px; font-weight: bold; color: #ffdd44; margin-bottom: 5px; }
+        .collection-badge-desc { font-size: 12px; color: #888; }
+        #close-badges { margin-top: 30px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        #close-badges:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Arena Select Screen */
+        #arena-select-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 350; color: white; padding: 40px 20px; overflow-y: auto; }
+        #arena-select-screen h2 { font-size: 36px; color: #ffdd44; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 3px; }
+        #arena-select-screen .subtitle { font-size: 16px; color: #888; margin-bottom: 30px; }
+        #arena-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 900px; width: 100%; }
+        .arena-card { padding: 20px; background: rgba(255,255,255,0.03); border: 2px solid #444; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; text-align: center; }
+        .arena-card:hover { border-color: #ffdd44; transform: translateY(-5px); box-shadow: 0 10px 30px rgba(255, 221, 68, 0.3); }
+        .arena-number { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        .arena-card-name { font-size: 20px; font-weight: bold; color: #ffdd44; margin-bottom: 10px; }
+        .arena-card-level { font-size: 14px; color: #44ff44; margin-bottom: 10px; }
+        .arena-card-waves { font-size: 12px; color: #888; margin-bottom: 10px; }
+        .arena-card-desc { font-size: 12px; color: #aaa; line-height: 1.5; }
+        #close-arena-select { margin-top: 30px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        #close-arena-select:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Debug Menu */
+        #debug-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 40px 20px; overflow-y: auto; }
+        #debug-screen h2 { font-size: 36px; color: #ff4444; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 3px; }
+        #debug-screen .subtitle { font-size: 14px; color: #888; margin-bottom: 30px; }
+        .debug-section { width: 100%; max-width: 800px; background: rgba(255,255,255,0.03); border: 2px solid #444; border-radius: 15px; padding: 20px; margin-bottom: 20px; }
+        .debug-section h3 { font-size: 18px; color: #ffdd44; margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .debug-controls { display: flex; flex-wrap: wrap; gap: 10px; }
+        .debug-btn { padding: 10px 20px; font-size: 14px; background: linear-gradient(135deg, #444, #555); border: 2px solid #666; border-radius: 8px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        .debug-btn:hover { border-color: #ffdd44; transform: translateY(-2px); }
+        .debug-btn.danger { background: linear-gradient(135deg, #661111, #881111); border-color: #aa1111; }
+        .debug-btn.danger:hover { border-color: #ff4444; }
+        .debug-btn.success { background: linear-gradient(135deg, #116611, #118811); border-color: #11aa11; }
+        .debug-btn.success:hover { border-color: #44ff44; }
+        .debug-select { padding: 10px; font-size: 14px; background: #222; border: 2px solid #444; border-radius: 8px; color: white; cursor: pointer; }
+        .debug-select:focus { border-color: #ffdd44; outline: none; }
+        .debug-input { padding: 10px; font-size: 14px; background: #222; border: 2px solid #444; border-radius: 8px; color: white; width: 80px; }
+        .debug-input:focus { border-color: #ffdd44; outline: none; }
+        .debug-label { font-size: 14px; color: #aaa; margin-right: 10px; }
+        .debug-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        #close-debug { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        #close-debug:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Character Roster Screen */
+        #roster-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 40px 20px; overflow-y: auto; }
+        #roster-screen h2 { font-size: 36px; color: #ffdd44; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 3px; }
+        .roster-tabs { display: flex; gap: 10px; margin-bottom: 25px; }
+        .roster-tab { padding: 12px 30px; font-size: 16px; background: transparent; border: 2px solid #444; border-radius: 8px; cursor: pointer; color: #888; font-weight: bold; transition: all 0.3s ease; }
+        .roster-tab:hover { border-color: #666; color: #aaa; }
+        .roster-tab.active { border-color: #ffdd44; color: #ffdd44; background: rgba(255, 221, 68, 0.1); }
+        #roster-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1200px; width: 100%; padding: 10px; }
+        .roster-card { padding: 20px; background: rgba(255,255,255,0.03); border: 2px solid #333; border-radius: 15px; transition: all 0.3s ease; }
+        .roster-card:hover { border-color: #555; transform: translateY(-3px); }
+        .roster-card.locked { opacity: 0.5; }
+        .roster-card.locked .roster-card-header { filter: grayscale(100%); }
+        .roster-card.boss { border-color: #ff4444; background: rgba(255, 68, 68, 0.05); }
+        .roster-card.boss:hover { border-color: #ff6666; }
+        .roster-card-header { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; }
+        .roster-sphere { width: 50px; height: 50px; border-radius: 50%; box-shadow: 0 0 15px currentColor; }
+        .roster-sphere.locked { background: #333 !important; box-shadow: none; }
+        .roster-card-title { flex: 1; }
+        .roster-name { font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 2px; }
+        .roster-tagline { font-size: 12px; color: #888; font-style: italic; }
+        .roster-arena-badge { font-size: 11px; color: #ffdd44; background: rgba(255, 221, 68, 0.15); padding: 3px 8px; border-radius: 4px; }
+        .roster-description { font-size: 13px; color: #aaa; line-height: 1.5; margin-bottom: 12px; min-height: 60px; }
+        .roster-behavior { font-size: 12px; color: #44ff44; background: rgba(68, 255, 68, 0.1); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #44ff44; }
+        .roster-locked-text { font-size: 13px; color: #666; text-align: center; padding: 20px 0; }
+        #roster-stats { display: flex; gap: 30px; margin-bottom: 20px; color: #888; font-size: 14px; }
+        .roster-stat { display: flex; align-items: center; gap: 8px; }
+        .roster-stat-value { color: #ffdd44; font-weight: bold; }
+        #close-roster { margin-top: 30px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        #close-roster:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Modules Screen */
+        #modules-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 50px; z-index: 350; color: white; overflow-y: auto; pointer-events: auto; }
+        #modules-screen h2 { font-size: 36px; color: #00ffff; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 3px; }
+        #modules-content { width: 90%; max-width: 1000px; margin-bottom: 30px; }
+        .modules-section { margin-bottom: 40px; }
+        .modules-section h3 { font-size: 20px; color: #ffdd44; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 2px; }
+        .section-subtitle { font-size: 14px; color: #888; margin-bottom: 15px; }
+        #core-upgrades-grid, #unlockable-modules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
+        .module-card { background: rgba(20, 20, 40, 0.8); border: 2px solid #444; border-radius: 10px; padding: 20px; text-align: center; position: relative; transition: all 0.3s ease; cursor: pointer; }
+        .module-card:hover { border-color: #00ffff; transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0, 255, 255, 0.3); }
+        .module-card.locked { opacity: 0.4; border-color: #333; }
+        .module-card.locked:hover { opacity: 0.6; border-color: #666; }
+        .module-icon { font-size: 48px; margin-bottom: 10px; }
+        .module-card.locked .module-icon { filter: grayscale(100%); }
+        .module-name { font-size: 16px; font-weight: bold; color: #00ffff; margin-bottom: 8px; }
+        .module-card.locked .module-name { color: #666; }
+        .module-status { font-size: 14px; color: #44ff88; margin-bottom: 5px; }
+        .module-card.locked .module-status { color: #888; }
+        .mastery-indicator { display: inline-block; padding: 4px 12px; background: rgba(0, 255, 255, 0.2); border-radius: 12px; font-size: 12px; font-weight: bold; color: #00ffff; }
+        .module-card.locked .mastery-indicator { background: rgba(100, 100, 100, 0.2); color: #666; }
+        .module-progress { font-size: 11px; color: #888; margin-top: 5px; }
+        .module-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.95); border: 2px solid #00ffff; border-radius: 8px; padding: 10px 15px; font-size: 12px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; z-index: 1000; margin-bottom: 10px; }
+        .module-card:hover .module-tooltip { opacity: 1; }
+        .tooltip-unlock-req { color: #ffdd44; font-weight: bold; }
+        .tooltip-progress { color: #888; margin-top: 5px; }
+        .tooltip-next-level { color: #00ffff; margin-top: 5px; }
+        #close-modules { padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; margin-bottom: 30px; }
+        #close-modules:hover { border-color: #00ffff; color: #00ffff; }
+        
+        /* Pause menu buttons */
+        #pause-roster-btn, #pause-main-menu-btn, #pause-debug-btn { margin-top: 20px; padding: 10px 25px; font-size: 14px; background: transparent; border: 2px solid #666; border-radius: 8px; cursor: pointer; color: #aaa; transition: all 0.3s ease; margin-left: 10px; }
+        #pause-roster-btn:hover, #pause-main-menu-btn:hover, #pause-debug-btn:hover { border-color: #ffdd44; color: #ffdd44; }
+        #pause-main-menu-btn { border-color: #ff4444; color: #ff4444; }
+        #pause-main-menu-btn:hover { border-color: #ff6666; color: #ff6666; }
+        #pause-debug-btn { border-color: #ff8800; color: #ff8800; display: none; }
+        #pause-debug-btn:hover { border-color: #ffaa44; color: #ffaa44; }
+        
+        /* Version Display - always visible */
+        #version-display { position: fixed; bottom: 10px; right: 10px; font-size: 12px; color: rgba(255, 255, 255, 0.3); font-family: monospace; z-index: 10000; pointer-events: none; }
+        
+        /* Loading Screen */
+        #loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a1a; display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
+        #loading-screen.fade-out { opacity: 0; pointer-events: none; }
+        .loading-content { text-align: center; color: #888; }
+        .loading-content p { margin-top: 20px; font-size: 18px; letter-spacing: 2px; }
+        .loading-spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #ffdd44; border-radius: 50%; margin: 0 auto; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* GPU Warning */
+        .gpu-warning { margin-top: 20px; padding: 15px 20px; background: rgba(255, 136, 68, 0.2); border: 1px solid rgba(255, 136, 68, 0.5); border-radius: 8px; color: #ffaa44; text-align: center; }
+        .gpu-warning .warning-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; }
+        .gpu-warning .warning-text { font-size: 14px; color: #ccc; }
+        .gpu-warning .warning-hint { font-size: 12px; color: #888; margin-top: 8px; }
+        
+        /* GPU Warning Buttons */
+        .warning-buttons { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
+        .warning-btn { padding: 12px 24px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; min-width: 140px; }
+        .warning-btn-primary { background: linear-gradient(135deg, #ffdd44, #ffaa00); color: #000; }
+        .warning-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(255, 221, 68, 0.4); }
+        .warning-btn-secondary { background: rgba(255, 255, 255, 0.1); color: #ccc; border: 1px solid rgba(255, 255, 255, 0.3); }
+        .warning-btn-secondary:hover { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.5); }
+        
+        /* GPU Help Content */
+        .gpu-help-content { margin-top: 20px; padding: 20px; background: rgba(0, 0, 0, 0.8); border: 1px solid rgba(255, 221, 68, 0.5); border-radius: 8px; color: #ccc; text-align: left; max-height: 400px; overflow-y: auto; }
+        .help-instructions { margin: 15px 0; }
+        .help-section { margin-bottom: 15px; padding: 10px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; }
+        .help-section strong { color: #ffdd44; font-size: 15px; display: block; margin-bottom: 8px; }
+        .help-section ol, .help-section ul { margin: 8px 0 0 20px; padding: 0; }
+        .help-section li { margin: 4px 0; line-height: 1.5; }
+        
+        /* Feedback Overlay */
+        #feedback-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 400; color: white; padding: 20px; overflow-y: auto; }
+        #feedback-overlay.visible { display: flex; }
+        .feedback-container { max-width: 500px; width: 100%; background: rgba(20, 20, 40, 0.9); border: 2px solid #00aaff; border-radius: 15px; padding: 30px; }
+        .feedback-title { font-size: 28px; color: #00aaff; text-align: center; margin-bottom: 5px; }
+        .feedback-version { font-size: 14px; color: #666; text-align: center; margin-bottom: 25px; }
+        .feedback-question { margin-bottom: 20px; }
+        .feedback-question-label { font-size: 16px; color: #fff; margin-bottom: 10px; display: block; }
+        .feedback-options { display: flex; flex-wrap: wrap; gap: 10px; }
+        .feedback-option { flex: 1 1 45%; min-width: 120px; padding: 12px 16px; background: rgba(255,255,255,0.05); border: 2px solid #444; border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.2s ease; font-size: 14px; color: #aaa; }
+        .feedback-option:hover { border-color: #00aaff; color: #fff; }
+        .feedback-option.selected { border-color: #00aaff; background: rgba(0, 170, 255, 0.2); color: #00aaff; }
+        .feedback-rating { display: flex; gap: 10px; justify-content: center; }
+        .feedback-rating-btn { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.05); border: 2px solid #444; cursor: pointer; font-size: 18px; color: #888; transition: all 0.2s ease; }
+        .feedback-rating-btn:hover { border-color: #ffdd44; color: #ffdd44; }
+        .feedback-rating-btn.selected { border-color: #ffdd44; background: rgba(255, 221, 68, 0.2); color: #ffdd44; }
+        .feedback-textarea { width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 2px solid #444; border-radius: 8px; color: #fff; font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px; }
+        .feedback-textarea:focus { border-color: #00aaff; outline: none; }
+        .feedback-textarea::placeholder { color: #666; }
+        .feedback-input { width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 2px solid #444; border-radius: 8px; color: #fff; font-size: 14px; font-family: inherit; }
+        .feedback-input:focus { border-color: #00aaff; outline: none; }
+        .feedback-input::placeholder { color: #666; }
+        .feedback-buttons { display: flex; gap: 15px; margin-top: 25px; justify-content: center; }
+        #feedback-submit { padding: 15px 40px; font-size: 18px; background: linear-gradient(135deg, #00aaff, #0077cc); border: none; border-radius: 10px; cursor: pointer; color: white; font-weight: bold; transition: all 0.3s ease; }
+        #feedback-submit:hover { transform: scale(1.05); box-shadow: 0 5px 20px rgba(0, 170, 255, 0.4); }
+        #feedback-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        #feedback-skip { padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: #aaa; font-weight: bold; transition: all 0.3s ease; }
+        #feedback-skip:hover { border-color: #888; color: #fff; }
+        .feedback-status { text-align: center; margin-top: 15px; font-size: 14px; }
+        .feedback-status.success { color: #44ff44; }
+        .feedback-status.error { color: #ff4444; }
+        
+        /* Play Again Prompt */
+        #play-again-prompt { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); padding: 40px 60px; border-radius: 15px; border: 2px solid #44ff44; display: none; z-index: 280; text-align: center; color: white; }
+        #play-again-prompt.visible { display: block; }
+        #play-again-prompt h2 { color: #44ff44; font-size: 36px; margin-bottom: 15px; }
+        #play-again-prompt p { color: #888; margin-bottom: 25px; }
+        .play-again-buttons { display: flex; gap: 20px; justify-content: center; }
+        #play-again-yes { padding: 15px 40px; font-size: 18px; background: linear-gradient(135deg, #44ff44, #22aa22); border: none; border-radius: 10px; cursor: pointer; color: white; font-weight: bold; transition: all 0.3s ease; }
+        #play-again-yes:hover { transform: scale(1.05); }
+        #play-again-menu { padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: #aaa; font-weight: bold; transition: all 0.3s ease; }
+        #play-again-menu:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Feedback button in menus */
+        #menu-feedback-btn, #pause-feedback-btn, #death-feedback-btn { margin-top: 10px; padding: 10px 25px; font-size: 14px; background: transparent; border: 2px solid #00aaff; border-radius: 8px; cursor: pointer; color: #00aaff; transition: all 0.3s ease; }
+        #menu-feedback-btn:hover, #pause-feedback-btn:hover, #death-feedback-btn:hover { background: rgba(0, 170, 255, 0.1); border-color: #44ccff; color: #44ccff; }
+    </style>
+    
+</head>
+<body>
+    <!-- Loading Screen (shows while Three.js initializes) -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+    
+    <div id="game-container">
+        <div id="damage-flash"></div>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div class="hud-top">
+                <div class="hud-left">
+                    <div class="stat-label">Health</div>
+                    <div class="health-bar-container"><div class="health-bar" id="health-bar"></div></div>
+                    <div class="level-display">Level <span id="level">1</span></div>
+                    <div class="stat-label" style="margin-top: 10px;">XP</div>
+                    <div class="xp-bar-container"><div class="xp-bar" id="xp-bar"></div></div>
+                    <div id="badge-panel"></div>
+                </div>
+                <div class="hud-center">
+                    <div class="arena-info">Arena <span id="arena-num">1</span> - <span id="arena-name">The Training Grounds</span></div>
+                    <div class="wave-info">Wave <span id="wave-num">1</span> / <span id="waves-total">3</span></div>
+                </div>
+                <div class="hud-right">
+                    <div class="stat-label">Time</div>
+                    <div class="stat-value" id="timer">0:00</div>
+                    <div class="stat-label" style="margin-top: 10px;">Score</div>
+                    <div class="stat-value" id="score">0</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="crosshair"></div>
+        <div id="kill-counter">Kills: <span id="kills">0</span></div>
+        
+        <!-- Announcements -->
+        <div id="wave-announcement">
+            <div class="wave-text">WAVE 1</div>
+            <div class="arena-text">Arena 1 - The Training Grounds</div>
+            <div id="wave-preview">
+                <div id="wave-threat" class="threat-low">LOW THREAT</div>
+                <div id="wave-enemy-icons"></div>
+                <div id="wave-modifier"></div>
+            </div>
+        </div>
+        
+        <div id="boss-health-container">
+            <div id="boss-header">
+                <div id="boss-name">THE GUARDIAN</div>
+                <div id="boss-phase">PHASE I</div>
+            </div>
+            <div id="boss-health-bar-bg"><div id="boss-health-bar"></div></div>
+            <div id="boss-shield-container">
+                <div id="boss-shield-bar-bg"><div id="boss-shield-bar"></div></div>
+                <div id="boss-shield-label">
+                    <span>SHIELD</span>
+                    <span id="boss-minion-count">0 minions</span>
+                </div>
+            </div>
+            <div id="boss-exposed">EXPOSED! Attack now!</div>
+            <div id="boss-cycle-indicator"></div>
+        </div>
+        
+        <div id="cycle-announcement"></div>
+        
+        <div id="unlock-notification">
+            <div class="unlock-title">NEW MECHANIC UNLOCKED</div>
+            <div id="unlock-text">PILLARS & COVER</div>
+        </div>
+        
+        <div id="badge-unlock">
+            <div class="badge-unlock-title">Badge Earned!</div>
+            <div id="badge-unlock-icon">🏆</div>
+            <div id="badge-unlock-name">Initiate</div>
+            <div id="badge-unlock-desc">Defeated The Gatekeeper</div>
+        </div>
+        
+        <!-- Menus -->
+        <div id="pause-indicator">PAUSED<p>Click anywhere to resume</p><button id="pause-roster-btn">View Roster</button><button id="pause-feedback-btn">Feedback</button><button id="pause-debug-btn">Debug</button><button id="pause-main-menu-btn">Main Menu</button></div>
+        
+        <div id="upgrade-menu">
+            <h2>LEVEL UP!</h2>
+            <div class="upgrade-options" id="upgrade-options"></div>
+        </div>
+        
+        <div id="game-over">
+            <h2>GAME OVER</h2>
+            <div id="death-recap">
+                <h3>Death Recap</h3>
+                <div id="death-recap-list"></div>
+                <div id="death-tip"></div>
+            </div>
+            <div class="final-stats">
+                <div>Time Survived: <span id="final-time"></span></div>
+                <div>Arena Reached: <span id="final-arena"></span></div>
+                <div>Level Reached: <span id="final-level"></span></div>
+                <div>Enemies Killed: <span id="final-kills"></span></div>
+                <div>Final Score: <span id="final-score"></span></div>
+            </div>
+            <div id="combat-recap">
+                <h3>Combat Stats</h3>
+                <div id="combat-stats-grid"></div>
+                <div id="performance-grade"></div>
+            </div>
+            <button id="restart-btn">Play Again</button>
+            <button id="death-feedback-btn">Give Feedback</button>
+        </div>
+        
+        <!-- Leaderboard Screen -->
+        <div id="leaderboard-screen">
+            <h2>Leaderboard</h2>
+            <div id="leaderboard-entries"></div>
+            <button id="close-leaderboard">Close</button>
+        </div>
+        
+        <!-- High Score Entry -->
+        <div id="high-score-entry">
+            <h2>NEW HIGH SCORE!</h2>
+            <div class="hs-subtitle">You made the leaderboard!</div>
+            <div id="hs-rank">#1</div>
+            <div id="hs-score">0</div>
+            <input type="text" id="hs-name-input" maxlength="3" placeholder="AAA">
+            <button id="hs-submit">Submit</button>
+        </div>
+        
+        <!-- Badge Collection Screen -->
+        <div id="badge-collection">
+            <h2>Arena Mastery</h2>
+            <div id="badge-collection-grid"></div>
+            <button id="close-badges">Close</button>
+        </div>
+        
+        <!-- Debug Screen -->
+        <div id="debug-screen">
+            <h2>Debug Menu</h2>
+            <p class="subtitle">Developer testing tools - not for regular gameplay</p>
+            
+            <div class="debug-section">
+                <h3>Empty Arena Mode</h3>
+                <div class="debug-controls">
+                    <button id="debug-empty-arena" class="debug-btn success">Start Empty Arena (No Enemies)</button>
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h3>Spawn Enemies</h3>
+                <div class="debug-row">
+                    <span class="debug-label">Enemy Type:</span>
+                    <select id="debug-enemy-select" class="debug-select">
+                        <option value="grunt">Grunt</option>
+                        <option value="shielded">Shielded</option>
+                        <option value="fastBouncer">Fast Bouncer</option>
+                        <option value="splitter">Splitter</option>
+                        <option value="teleporter">Teleporter</option>
+                        <option value="pillarPolice">Pillar Police</option>
+                        <option value="shooter">Shooter</option>
+                    </select>
+                    <button id="debug-spawn-enemy" class="debug-btn">Spawn Enemy</button>
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h3>Warp to Arena/Wave</h3>
+                <div class="debug-row">
+                    <span class="debug-label">Arena:</span>
+                    <input type="number" id="debug-warp-arena" class="debug-input" min="1" max="6" value="1">
+                    <span class="debug-label">Wave:</span>
+                    <input type="number" id="debug-warp-wave" class="debug-input" min="1" max="10" value="1">
+                    <button id="debug-warp-btn" class="debug-btn">Warp</button>
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h3>Start Boss Battle</h3>
+                <div class="debug-row">
+                    <span class="debug-label">Boss Type:</span>
+                    <select id="debug-boss-select" class="debug-select">
+                        <option value="1">Boss 1 - The Gatekeeper</option>
+                        <option value="2">Boss 2 - The Monolith</option>
+                        <option value="3">Boss 3 - The Ascendant</option>
+                        <option value="4">Boss 4 - The Overgrowth</option>
+                        <option value="5">Boss 5 - The Burrower</option>
+                        <option value="6">Boss 6 - Chaos Incarnate</option>
+                    </select>
+                    <button id="debug-spawn-boss" class="debug-btn danger">Start Boss Battle</button>
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h3>Player Controls</h3>
+                <div class="debug-controls">
+                    <button id="debug-give-levels" class="debug-btn">Give 10 Levels</button>
+                    <button id="debug-toggle-invincible" class="debug-btn">Toggle Invincibility</button>
+                    <button id="debug-full-heal" class="debug-btn success">Full Heal</button>
+                    <button id="debug-unlock-all" class="debug-btn">Unlock All Mechanics</button>
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h3>Playtest Feedback</h3>
+                <div class="debug-controls">
+                    <button id="debug-test-feedback" class="debug-btn">Test Connection</button>
+                    <span id="debug-feedback-status" style="margin-left: 10px; color: #888;"></span>
+                </div>
+            </div>
+            
+            <div class="debug-section">
+                <h3>GPU Information</h3>
+                <div id="debug-gpu-info" class="debug-controls" style="flex-direction: column; gap: 5px;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            
+            <button id="close-debug">Close</button>
+        </div>
+        
+        <!-- Arena Select Screen -->
+        <div id="arena-select-screen">
+            <h2>Arena Select</h2>
+            <p class="subtitle">Test Mode - Start at any arena with scaled stats</p>
+            <div id="arena-grid"></div>
+            <button id="close-arena-select">Close</button>
+        </div>
+        
+        <!-- Character Roster Screen -->
+        <div id="roster-screen">
+            <h2>Character Roster</h2>
+            <div id="roster-stats">
+                <div class="roster-stat">Enemies Discovered: <span class="roster-stat-value" id="roster-enemies-discovered">0</span> / <span id="roster-enemies-total">8</span></div>
+                <div class="roster-stat">Bosses Defeated: <span class="roster-stat-value" id="roster-bosses-discovered">0</span> / <span id="roster-bosses-total">6</span></div>
+            </div>
+            <div class="roster-tabs">
+                <button class="roster-tab active" data-tab="enemies">Enemies</button>
+                <button class="roster-tab" data-tab="bosses">Bosses</button>
+            </div>
+            <div id="roster-grid"></div>
+            <button id="close-roster">Close</button>
+        </div>
+        
+        <!-- Feedback Overlay -->
+        <div id="feedback-overlay">
+            <div class="feedback-container">
+                <div class="feedback-title">Thanks for Playing!</div>
+                <div class="feedback-version" id="feedback-version">v0.2.4</div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">1. How fun was this session?</label>
+                    <div class="feedback-rating" id="feedback-q1">
+                        <button class="feedback-rating-btn" data-value="1">1</button>
+                        <button class="feedback-rating-btn" data-value="2">2</button>
+                        <button class="feedback-rating-btn" data-value="3">3</button>
+                        <button class="feedback-rating-btn" data-value="4">4</button>
+                        <button class="feedback-rating-btn" data-value="5">5</button>
+                    </div>
+                </div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">2. How did the controls feel?</label>
+                    <div class="feedback-options" id="feedback-q2">
+                        <div class="feedback-option" data-value="Great">Great</div>
+                        <div class="feedback-option" data-value="Okay">Okay</div>
+                        <div class="feedback-option" data-value="Clunky">Clunky</div>
+                        <div class="feedback-option" data-value="Confusing">Confusing</div>
+                    </div>
+                </div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">3. Did you understand what to do?</label>
+                    <div class="feedback-options" id="feedback-q3">
+                        <div class="feedback-option" data-value="Always">Always</div>
+                        <div class="feedback-option" data-value="Mostly">Mostly</div>
+                        <div class="feedback-option" data-value="Sometimes">Sometimes</div>
+                        <div class="feedback-option" data-value="Rarely">Rarely</div>
+                    </div>
+                </div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">4. How was the difficulty?</label>
+                    <div class="feedback-options" id="feedback-q4">
+                        <div class="feedback-option" data-value="Too Easy">Too Easy</div>
+                        <div class="feedback-option" data-value="Just Right">Just Right</div>
+                        <div class="feedback-option" data-value="Too Hard">Too Hard</div>
+                        <div class="feedback-option" data-value="Frustrating">Frustrating</div>
+                    </div>
+                </div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">5. Would you play again?</label>
+                    <div class="feedback-options" id="feedback-q5">
+                        <div class="feedback-option" data-value="Definitely">Definitely</div>
+                        <div class="feedback-option" data-value="Probably">Probably</div>
+                        <div class="feedback-option" data-value="Maybe">Maybe</div>
+                        <div class="feedback-option" data-value="No">No</div>
+                    </div>
+                </div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">Anything else? (optional)</label>
+                    <textarea class="feedback-textarea" id="feedback-open" placeholder="Share your thoughts, suggestions, or issues..." maxlength="500"></textarea>
+                </div>
+                
+                <div class="feedback-question">
+                    <label class="feedback-question-label">Name / Discord (optional)</label>
+                    <input type="text" class="feedback-input" id="feedback-name" placeholder="So we know who to thank!" maxlength="50">
+                </div>
+                
+                <div class="feedback-buttons">
+                    <button id="feedback-submit">Submit</button>
+                    <button id="feedback-skip">Skip</button>
+                </div>
+                <div class="feedback-status" id="feedback-status"></div>
+            </div>
+        </div>
+        
+        <!-- Play Again Prompt -->
+        <div id="play-again-prompt">
+            <h2>Victory!</h2>
+            <p>You defeated the boss. Want to play again?</p>
+            <div class="play-again-buttons">
+                <button id="play-again-yes">Play Again</button>
+                <button id="play-again-menu">Main Menu</button>
+            </div>
+        </div>
+        
+        <!-- Modules Screen -->
+        <div id="modules-screen">
+            <h2>MODULES</h2>
+            <div id="modules-content">
+                <div class="modules-section">
+                    <h3>Core Upgrades</h3>
+                    <p class="section-subtitle">Always available in level-up choices</p>
+                    <div id="core-upgrades-grid"></div>
+                </div>
+                <div class="modules-section">
+                    <h3>Unlockable Modules</h3>
+                    <p class="section-subtitle">Earn through gameplay achievements</p>
+                    <div id="unlockable-modules-grid"></div>
+                </div>
+            </div>
+            <button id="close-modules">Close</button>
+        </div>
+        
+        <!-- Start Screen -->
+        <div id="start-screen">
+            <div id="start-screen-content">
+                <h1>MANTA SPHERE</h1>
+                <p>Survive the arenas. Defeat the bosses. Earn your badges.</p>
+                <div class="start-buttons">
+                    <button id="start-btn">START GAME</button>
+                </div>
+                <div class="start-buttons">
+                    <button id="arena-select-btn" class="secondary-btn">Arena Select</button>
+                    <button id="debug-btn" class="secondary-btn">Debug Menu</button>
+                </div>
+                <div class="start-buttons">
+                    <button id="leaderboard-btn" class="secondary-btn">Leaderboard</button>
+                    <button id="badges-btn" class="secondary-btn">Badges</button>
+                    <button id="modules-btn" class="secondary-btn">Modules</button>
+                    <button id="roster-btn" class="secondary-btn">Roster</button>
+                </div>
+                <div class="start-buttons">
+                    <button id="menu-feedback-btn" class="secondary-btn">Feedback</button>
+                </div>
+                <div id="mastery-panel"></div>
+                <div class="controls-info">
+                    <div><span>WASD</span> Move <span>SPACE</span> Jump <span>SHIFT</span> Dash</div>
+                    <div><span>MOUSE</span> Look around <span>CLICK</span> Lock cursor</div>
+                    <div style="margin-top: 15px;"><span>M</span> Toggle Music</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Global Version Display - always visible -->
+    <div id="version-display">v0.2.4</div>
+    
+    <!-- Three.js from CDN with SRI hash for supply-chain security -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js" 
+            integrity="sha512-334uBDwY0iZ2TklV1OtDtBW9vp7jjP7SWRzT7Ehu1fdtPIjTpCwTSFb8HI/YBau9L1/kRBEOALrS229Kry4yFQ==" 
+            crossorigin="anonymous" 
+            referrerpolicy="no-referrer"></script>
+    
+    <!-- Three.js Post-Processing for Bloom Effects -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/shaders/CopyShader.js"></script>
+    
+    <!-- loglevel for debug logging (1.4KB) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/loglevel/1.9.2/loglevel.min.js"></script>
+    
+    <!-- DEV MODE: Enable debug without build -->
+    <script>window.__DEV_MODE__ = true;</script>
+    
+    <!-- Load ES modules directly (no build required) -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -8,6 +8,7 @@
 import { VERSION } from '../config/constants.js';
 import { gameState } from '../core/gameState.js';
 import { gameStartTime } from '../ui/hud.js';
+import { log } from './debugLog.js';
 
 // ============================================================================
 // Configuration
@@ -19,13 +20,13 @@ let config = {
 };
 
 /**
- * Initialize playtest feedback with config from debug.local.js
+ * Initialize playtest feedback with config from .env (injected at build time)
  * @param {Object} cfg - { url: string, token: string }
  */
 export function initPlaytestFeedback(cfg) {
     if (cfg && cfg.url && cfg.token) {
         config = cfg;
-        console.log('[Playtest] Feedback system initialized');
+        log('PLAYTEST', 'initialized', {});
     }
 }
 
@@ -42,11 +43,11 @@ export function isFeedbackEnabled() {
  * @returns {Promise<{success: boolean, message: string, details?: object}>}
  */
 export async function testFeedbackConnection() {
-    console.log('[Playtest] Testing connection...');
+    log('PLAYTEST', 'test_start', {});
     
     // Check if configured
     if (!isFeedbackEnabled()) {
-        const msg = 'Not configured - add PLAYTEST_CONFIG to debug.local.js';
+        const msg = 'Not configured - add PLAYTEST_URL and PLAYTEST_TOKEN to .env';
         console.warn('[Playtest] ' + msg);
         return { success: false, message: msg };
     }
@@ -66,7 +67,7 @@ export async function testFeedbackConnection() {
         timestamp: new Date().toISOString()
     };
     
-    console.log('[Playtest] URL: ' + config.url.substring(0, 60) + '...');
+    log('PLAYTEST', 'test_url', { url: config.url.substring(0, 60) + '...' });
     
     try {
         const controller = new AbortController();
@@ -90,9 +91,7 @@ export async function testFeedbackConnection() {
                 data = { raw: await response.text() };
             }
             
-            console.log('[Playtest] Connection successful!');
-            console.log('[Playtest] Response:', data);
-            console.log('[Playtest] Round-trip time: ' + elapsed + 'ms');
+            log('PLAYTEST', 'test_success', { elapsed, data });
             
             return { 
                 success: true, 
@@ -294,7 +293,7 @@ async function handleSubmit() {
     
     if (!isFeedbackEnabled()) {
         console.warn('[Playtest] Feedback system not configured');
-        console.warn('  → Create js/config/debug.local.js with PLAYTEST_CONFIG');
+        console.warn('  → Add PLAYTEST_URL and PLAYTEST_TOKEN to .env and rebuild');
         if (statusEl) {
             statusEl.textContent = 'Feedback system not configured';
             statusEl.className = 'feedback-status error';
@@ -344,7 +343,7 @@ async function handleSubmit() {
         testerName: formState.testerName || ''
     };
     
-    console.log('[Playtest] Submitting to: ' + getRedactedUrl());
+    log('PLAYTEST', 'submit_start', { url: getRedactedUrl() });
     
     try {
         const controller = new AbortController();
@@ -362,7 +361,7 @@ async function handleSubmit() {
         clearTimeout(timeoutId);
         
         if (response.ok) {
-            console.log('[Playtest] Feedback submitted successfully!');
+            log('PLAYTEST', 'submit_success', {});
             if (statusEl) {
                 statusEl.textContent = 'Thanks! Your feedback was sent.';
                 statusEl.className = 'feedback-status success';
@@ -381,7 +380,7 @@ async function handleSubmit() {
             const statusCode = response.status;
             console.error(`[Playtest] Server returned HTTP ${statusCode}`);
             if (statusCode === 401 || statusCode === 403) {
-                console.error('  → Token mismatch: Ensure token in debug.local.js matches PLAYTEST_TOKEN in Apps Script');
+                console.error('  → Token mismatch: Ensure PLAYTEST_TOKEN in .env matches PLAYTEST_TOKEN in Apps Script');
             }
             throw new Error(`HTTP ${statusCode}`);
         }

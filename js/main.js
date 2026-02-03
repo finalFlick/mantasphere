@@ -3,7 +3,7 @@ import { gameState, resetGameState } from './core/gameState.js';
 import { initScene, createGround, onWindowResize, render, scene, renderer, camera } from './core/scene.js';
 import { initInput, resetInput, checkCutsceneSkip, cleanupInput } from './core/input.js';
 import { resetAllEntities, enemies, getCurrentBoss } from './core/entities.js';
-import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, enableDebugMode } from './config/constants.js';
+import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, enableDebugMode, PLAYTEST_CONFIG } from './config/constants.js';
 
 import { createPlayer, updatePlayer, resetPlayer, player } from './entities/player.js';
 import { updateEnemies, clearEnemyGeometryCache } from './entities/enemies.js';
@@ -146,20 +146,17 @@ async function init() {
     }
     window.__mantaSphereInitialized = true;
     
-    // Try to enable secure debug mode and playtest feedback (requires localhost + debug.local.js)
-    import('/js/config/debug.local.js')
-        .then(({ DEBUG_SECRET, PLAYTEST_CONFIG }) => {
-            if (DEBUG_SECRET === true) {
-                enableDebugMode();
-                console.log('%c[DEBUG MODE]', 'color: #ffdd44; font-weight: bold', 'Enabled (debug.local.js loaded)');
-            }
-            if (PLAYTEST_CONFIG && PLAYTEST_CONFIG.url && PLAYTEST_CONFIG.token) {
-                initPlaytestFeedback(PLAYTEST_CONFIG);
-            }
-        })
-        .catch(() => {});
+    // Enable debug mode and playtest feedback based on build-time config
+    // Dev build (npm run dev): DEBUG_SECRET=true, enables debug logging
+    // Prod build (npm run build): DEBUG_SECRET=false, debug disabled
+    if (enableDebugMode()) {
+        setupDebugUI();
+    }
+    if (PLAYTEST_CONFIG && PLAYTEST_CONFIG.url && PLAYTEST_CONFIG.token) {
+        initPlaytestFeedback(PLAYTEST_CONFIG);
+    }
     
-    // Initialize debug logger
+    // Initialize debug logger (AFTER debug mode check completes)
     setGameStateRef(gameState);
     initLogger();
     log('STATE', 'init', { version: VERSION });
@@ -325,7 +322,7 @@ async function init() {
     addTrackedListener(window, 'keydown', (e) => {
         if (e.key === 'm' || e.key === 'M') {
             const enabled = PulseMusic.toggle();
-            if (DEBUG_ENABLED) console.log(`[${GAME_TITLE.toUpperCase()}] Music:`, enabled ? 'ON' : 'OFF');
+            log('DEBUG', 'music_toggled', { enabled });
         }
     });
     
@@ -438,17 +435,7 @@ async function init() {
         });
     }
     
-    // Pause menu debug button - only visible when DEBUG_ENABLED is true
-    const pauseDebugBtn = document.getElementById('pause-debug-btn');
-    if (pauseDebugBtn) {
-        if (DEBUG_ENABLED) {
-            pauseDebugBtn.style.display = 'inline-block';
-            addTrackedListener(pauseDebugBtn, 'click', (e) => {
-                e.stopPropagation(); // Prevent resume trigger
-                showDebugMenu();
-            });
-        }
-    }
+    // Pause menu debug button - handled by setupDebugUI() after debug mode is enabled
     
     // Arena select button
     const arenaSelectBtn = document.getElementById('arena-select-btn');
@@ -471,28 +458,14 @@ async function init() {
         }
     });
     
-    // Debug menu button - only visible when DEBUG_ENABLED is true
-    const debugBtn = document.getElementById('debug-btn');
-    if (debugBtn) {
-        if (DEBUG_ENABLED) {
-            addTrackedListener(debugBtn, 'click', () => {
-                showDebugMenu();
-            });
-        } else {
-            // Hide debug button in production
-            debugBtn.style.display = 'none';
-        }
-    }
+    // Debug menu button - setupDebugUI() shows it when debug mode is enabled
+    // Button is hidden by default in CSS/HTML, no need to hide it here
+    // (Previously this code was hiding the button AFTER setupDebugUI showed it, causing a race condition)
     
-    // Close debug menu button
+    // Close debug menu button (always set up, menu just won't be accessible without debug mode)
     const closeDebugBtn = document.getElementById('close-debug');
     if (closeDebugBtn) {
         addTrackedListener(closeDebugBtn, 'click', hideDebugMenu);
-    }
-    
-    // Debug controls - only set up when DEBUG_ENABLED is true
-    if (DEBUG_ENABLED) {
-        setupDebugControls();
     }
     
     // Start menu music on first user interaction (browser autoplay policy requires this)
@@ -820,6 +793,32 @@ function animate(currentTime) {
 }
 
 // Debug menu functions
+
+// Called when debug mode is enabled (dev builds only)
+function setupDebugUI() {
+    // Show debug button
+    const debugBtn = document.getElementById('debug-btn');
+    if (debugBtn) {
+        debugBtn.style.display = 'inline-block';
+        addTrackedListener(debugBtn, 'click', () => {
+            showDebugMenu();
+        });
+    }
+    
+    // Show pause menu debug button
+    const pauseDebugBtn = document.getElementById('pause-debug-btn');
+    if (pauseDebugBtn) {
+        pauseDebugBtn.style.display = 'inline-block';
+        addTrackedListener(pauseDebugBtn, 'click', (e) => {
+            e.stopPropagation();
+            showDebugMenu();
+        });
+    }
+    
+    // Set up debug controls
+    setupDebugControls();
+}
+
 function setupDebugControls() {
     // Populate GPU info in debug menu
     const gpuInfoEl = document.getElementById('debug-gpu-info');
@@ -954,12 +953,12 @@ function startEmptyArena() {
     updateUI();
     animate();
     
-    if (DEBUG_ENABLED) console.log('[DEBUG] Empty arena started - no enemies will spawn');
+    log('DEBUG', 'empty_arena_started', {});
 }
 
 function debugSpawnEnemy(enemyType) {
     if (!gameState.running) {
-        if (DEBUG_ENABLED) console.log('[DEBUG] Cannot spawn enemy - game not running');
+        log('DEBUG', 'spawn_failed', { reason: 'game_not_running' });
         return;
     }
     
@@ -970,12 +969,12 @@ function debugSpawnEnemy(enemyType) {
     const z = player.position.z + Math.sin(angle) * distance;
     
     spawnSpecificEnemy(enemyType, x, 1, z);
-    if (DEBUG_ENABLED) console.log(`[DEBUG] Spawned ${enemyType} at (${x.toFixed(1)}, 1, ${z.toFixed(1)})`);
+    log('DEBUG', 'enemy_spawned', { type: enemyType, x: x.toFixed(1), z: z.toFixed(1) });
 }
 
 function debugWarpToArenaWave(arena, wave) {
     if (!gameState.running) {
-        if (DEBUG_ENABLED) console.log('[DEBUG] Cannot warp - game not running');
+        log('DEBUG', 'warp_failed', { reason: 'game_not_running' });
         return;
     }
     
@@ -1005,7 +1004,7 @@ function debugWarpToArenaWave(arena, wave) {
     PulseMusic.onArenaChange(arena);
     
     updateUI();
-    if (DEBUG_ENABLED) console.log(`[DEBUG] Warped to Arena ${arena}, Wave ${wave}`);
+    log('DEBUG', 'warp_to', { arena, wave });
 }
 
 function startBossBattle(bossNum) {
@@ -1061,7 +1060,7 @@ function startBossBattle(bossNum) {
     updateUI();
     animate();
     
-    if (DEBUG_ENABLED) console.log(`[DEBUG] Starting Boss ${bossNum} Battle`);
+    log('DEBUG', 'boss_started', { bossNum });
 }
 
 // Legacy alias for compatibility
@@ -1071,7 +1070,7 @@ function debugSpawnBoss(bossNum) {
 
 function debugGiveLevels(count) {
     if (!gameState.running) {
-        if (DEBUG_ENABLED) console.log('[DEBUG] Cannot give levels - game not running');
+        log('DEBUG', 'give_levels_failed', { reason: 'game_not_running' });
         return;
     }
     
@@ -1105,7 +1104,7 @@ function debugGiveLevels(count) {
     }
     
     updateUI();
-    if (DEBUG_ENABLED) console.log(`[DEBUG] Gave ${count} levels - now level ${gameState.level}`);
+    log('DEBUG', 'levels_given', { count, newLevel: gameState.level });
 }
 
 function debugToggleInvincibility() {
@@ -1119,18 +1118,18 @@ function debugToggleInvincibility() {
             'linear-gradient(135deg, #444, #555)';
     }
     
-    if (DEBUG_ENABLED) console.log(`[DEBUG] Invincibility: ${gameState.debug.invincible ? 'ON' : 'OFF'}`);
+    log('DEBUG', 'invincibility_toggled', { enabled: gameState.debug.invincible });
 }
 
 function debugFullHeal() {
     if (!gameState.running) {
-        if (DEBUG_ENABLED) console.log('[DEBUG] Cannot heal - game not running');
+        log('DEBUG', 'heal_failed', { reason: 'game_not_running' });
         return;
     }
     
     gameState.health = gameState.maxHealth;
     updateUI();
-    if (DEBUG_ENABLED) console.log('[DEBUG] Full heal applied');
+    log('DEBUG', 'full_heal', {});
 }
 
 function debugUnlockAllMechanics() {
@@ -1143,7 +1142,7 @@ function debugUnlockAllMechanics() {
     gameState.unlockedEnemyBehaviors.ambush = true;
     gameState.unlockedEnemyBehaviors.multiLevel = true;
     
-    if (DEBUG_ENABLED) console.log('[DEBUG] All mechanics unlocked');
+    log('DEBUG', 'all_unlocked', {});
 }
 
 window.onload = init;
