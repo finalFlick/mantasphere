@@ -7,15 +7,15 @@ export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_'
 // Level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'
 // Tags: Enable/disable logging per category
 export const DEBUG_CONFIG = {
-    level: 'info',
+    level: 'silent',     // Production: no debug logging
     tags: {
-        WAVE: true,      // Wave lifecycle, modifiers, budgets
-        SPAWN: true,     // Enemy/school spawns, choreography
-        BOSS: true,      // Boss lifecycle, phases, retreat/return
-        SCORE: true,     // Bonuses, calculations
-        STATE: true,     // State machine transitions
-        SAFETY: true,    // Caps, pauses, invariant violations
-        PERF: false      // Performance metrics (noisy, off by default)
+        WAVE: false,
+        SPAWN: false,
+        BOSS: false,
+        SCORE: false,
+        STATE: false,
+        SAFETY: false,
+        PERF: false
     }
 };
 
