@@ -615,64 +615,11 @@ Rules:
 - If you see duplicate tracking files, flag them for deletion
 - GitHub Issues is the ONLY source of truth for work items
 
-Project Standards (use these exact conventions):
-
-**Label Taxonomy:**
-
-| Category | Label | Color | Usage |
-|----------|-------|-------|-------|
-| Priority | `priority:P0` | `#d73a49` | Ship blocker, must fix before release |
-| Priority | `priority:P1` | `#f9826c` | High priority, next sprint |
-| Priority | `priority:P2` | `#ffd33d` | Medium, schedule when time allows |
-| Priority | `priority:P3` | `#d4d4d4` | Future/experimental, backlog |
-| Type | `type:feature` | `#0366d6` | New functionality |
-| Type | `type:bug` | `#b60205` | Something broken |
-| Type | `type:tuning` | `#28a745` | Balance/numbers adjustment |
-| Type | `type:ux` | `#6f42c1` | Usability/readability improvement |
-| Area | `area:player` | `#c5def5` | Player movement, combat, stats |
-| Area | `area:enemy` | `#c5def5` | Enemy types, AI, spawning |
-| Area | `area:boss` | `#c5def5` | Boss fights, phases, abilities |
-| Area | `area:arena` | `#c5def5` | Level geometry, hazards |
-| Area | `area:ui` | `#c5def5` | HUD, menus, screens |
-| Area | `area:meta` | `#c5def5` | Progression, leaderboards, badges |
-| Effort | `effort:S` | `#bfdadc` | Small (~1-2 hours) |
-| Effort | `effort:M` | `#bfdadc` | Medium (~1 day) |
-| Effort | `effort:L` | `#bfdadc` | Large (~2-3 days) |
-| Effort | `effort:XL` | `#bfdadc` | Extra large (~1 week+) |
-
-**Labeling Rules:**
-- Every issue MUST have: one `priority:*`, one `type:*`, at least one `area:*`
-- Effort labels are recommended but optional
-- Multiple area labels OK (e.g., `area:enemy` + `area:boss` for telegraph work)
-
-**Issue Template Structure:**
-```markdown
-## Summary
-One sentence explaining what this is.
-
-## Context
-Why this matters. Link to playtest feedback or design docs.
-
-## Requirements
-- [ ] Concrete task 1
-- [ ] Concrete task 2
-
-## Acceptance Criteria
-- [ ] How do we know it's done?
-
-## Scope Boundaries
-**In scope:** What we ARE doing
-**Out of scope:** What we are NOT doing
-
-## How to Test
-1. Step-by-step verification
-
-## Files to Touch
-- `path/to/file.js` - What changes here
-```
-
-**Project Board Status Columns:**
-`Backlog` → `Ready` → `In Progress` → `In Review` → `Done`
+**Project Standards:** See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Label taxonomy (Priority, Type, Area, Effort)
+- Issue template structure
+- RICE scoring methodology
+- Project board workflow
 
 Deliverable (audience: me; concise but complete):
 1) **Triage Output (in chat):**

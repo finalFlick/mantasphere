@@ -1,0 +1,79 @@
+name: Feature Request
+description: Suggest new functionality
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for a new feature? Fill out the sections below.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence explaining the feature
+      placeholder: "Add X to enable players to Y"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why does this matter? Link to playtest feedback or design docs.
+      placeholder: |
+        Players have mentioned X...
+        This would improve Y because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: What needs to be built?
+      placeholder: |
+        - [ ] Concrete task 1
+        - [ ] Concrete task 2
+        - [ ] Concrete task 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know it's done?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope Boundaries
+      description: What's in and out of scope?
+      placeholder: |
+        **In scope:** What we ARE doing
+        **Out of scope:** What we are NOT doing
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: How to Test
+      description: Step-by-step verification
+      placeholder: |
+        1. Start game
+        2. Do X
+        3. Verify Y works
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Files to Touch
+      description: Which files need changes?
+      placeholder: |
+        - `js/systems/X.js` - Add Y logic
+        - `js/config/Z.js` - Add config values

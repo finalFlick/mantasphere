@@ -854,9 +854,13 @@ git push
 
 #### Version History
 
-Track major milestones:
-- **0.1.0**: Initial release (Arena 1, basic systems)
-- **0.2.0**: Documentation overhaul, code quality sweep, module system groundwork
+See [CHANGELOG.md](CHANGELOG.md) for complete version history.
+
+#### Milestone-Version Alignment
+
+- Each MINOR/MAJOR version MUST have a GitHub Milestone
+- Close milestone when version is released
+- Create GitHub Release with notes from CHANGELOG.md
 
 ### 18. Source of Truth Policy
 

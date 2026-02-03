@@ -1,0 +1,74 @@
+name: Bug Report
+description: Report something that's broken
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence explaining the bug
+      placeholder: "Player can't X because Y"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      placeholder: |
+        1. Start game
+        2. Do X
+        3. Observe Y
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happens?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: arena
+    attributes:
+      label: Arena
+      description: Which arena does this occur in?
+      options:
+        - Arena 1 - Training Grounds
+        - Arena 2 - Obstacle Field
+        - Arena 3 - Vertical Loop
+        - Arena 4 - Platform Gardens
+        - Arena 5 - The Labyrinth
+        - Arena 6 - Chaos Realm
+        - Main Menu
+        - All Arenas
+        - Not Applicable
+
+  - type: input
+    id: version
+    attributes:
+      label: Game Version
+      description: Check bottom-left of main menu
+      placeholder: "0.2.3"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Screenshots, console errors, or anything else helpful
