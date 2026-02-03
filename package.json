@@ -2,8 +2,11 @@
   "name": "spherestorm",
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.cjs",
-    "dev": "echo 'Open index.html directly for dev'",
+    "dev": "node scripts/build.cjs --watch --serve",
+    "watch": "node scripts/build.cjs --watch",
+    "build": "node scripts/build.cjs --prod",
+    "serve": "python -m http.server 8000",
+    "start": "npm run build && python -m http.server 8000",
     "feedback-sync": "node scripts/feedback-sync.js"
   },
   "dependencies": {

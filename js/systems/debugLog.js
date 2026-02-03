@@ -16,17 +16,28 @@
  */
 
 // Import with fallback for cache compatibility
-let DEBUG_CONFIG;
+// NOTE: We store a reference to the module, not a copy, so we can read the latest values
+let constantsModule = null;
 try {
-    const constants = await import('../config/constants.js');
-    DEBUG_CONFIG = constants.DEBUG_CONFIG || { level: 'silent', tags: {} };
+    constantsModule = await import('../config/constants.js');
 } catch {
-    DEBUG_CONFIG = { level: 'silent', tags: {} };
+    // Fallback handled in getDebugConfig()
+}
+
+// Get current DEBUG_CONFIG (reads live value, not cached copy)
+function getDebugConfig() {
+    if (constantsModule?.DEBUG_CONFIG) {
+        return constantsModule.DEBUG_CONFIG;
+    }
+    return { level: 'silent', tags: {} };
 }
 
 // State for throttling and deduplication
 const loggedOnceKeys = new Set();
 const throttleTimestamps = new Map();
+
+// Track if console group has been created
+let consoleGroupCreated = false;
 
 // Get context from gameState (lazy import to avoid circular deps)
 let gameStateRef = null;
@@ -44,13 +55,22 @@ function getContext() {
 
 // Check if tag is enabled
 function isTagEnabled(tag) {
-    if (!DEBUG_CONFIG.tags) return true;
-    return DEBUG_CONFIG.tags[tag] !== false;
+    const config = getDebugConfig();
+    if (!config.tags) return true;
+    return config.tags[tag] !== false;
 }
 
 // Check if logging is enabled at all
 function isLoggingEnabled() {
-    return DEBUG_CONFIG.level !== 'silent';
+    return getDebugConfig().level !== 'silent';
+}
+
+// Ensure console group is created (lazy initialization)
+function ensureConsoleGroup() {
+    if (!consoleGroupCreated && isLoggingEnabled()) {
+        console.groupCollapsed('🎮 MantaSphere Game Logs');
+        consoleGroupCreated = true;
+    }
 }
 
 // Format log message: [TAG] event | context + data
@@ -71,6 +91,7 @@ function formatLog(tag, event, data) {
  */
 export function log(tag, event, data = {}) {
     if (!isLoggingEnabled() || !isTagEnabled(tag)) return;
+    ensureConsoleGroup();
     const args = formatLog(tag, event, data);
     window.log.info(...args);
 }
@@ -80,6 +101,7 @@ export function log(tag, event, data = {}) {
  */
 export function logDebug(tag, event, data = {}) {
     if (!isLoggingEnabled() || !isTagEnabled(tag)) return;
+    ensureConsoleGroup();
     const args = formatLog(tag, event, data);
     window.log.debug(...args);
 }
@@ -89,6 +111,7 @@ export function logDebug(tag, event, data = {}) {
  */
 export function logWarn(tag, event, data = {}) {
     if (!isLoggingEnabled() || !isTagEnabled(tag)) return;
+    ensureConsoleGroup();
     const args = formatLog(tag, event, data);
     window.log.warn(...args);
 }
@@ -98,6 +121,7 @@ export function logWarn(tag, event, data = {}) {
  */
 export function logError(tag, event, data = {}) {
     if (!isLoggingEnabled()) return;
+    ensureConsoleGroup();
     const args = formatLog(tag, event, data);
     window.log.error(...args);
 }
@@ -143,6 +167,13 @@ export function assert(condition, tag, message, data = {}) {
 export function resetLogState() {
     loggedOnceKeys.clear();
     throttleTimestamps.clear();
+    
+    // Close previous session group and reset flag
+    if (consoleGroupCreated) {
+        console.groupEnd();
+        consoleGroupCreated = false;
+        // Next log will create a new group
+    }
 }
 
 /**
@@ -150,6 +181,7 @@ export function resetLogState() {
  * Call this once at startup after loglevel is loaded
  */
 export function initLogger() {
+    const config = getDebugConfig();
     if (typeof window.log === 'undefined') {
         console.warn('[DebugLog] loglevel not loaded, using console fallback');
         window.log = console;
@@ -157,8 +189,11 @@ export function initLogger() {
     }
     
     // Set log level from config
-    const level = DEBUG_CONFIG.level || 'info';
+    const level = config.level || 'info';
     window.log.setLevel(level);
     
-    window.log.info('[DebugLog] Logger initialized', { level, tags: Object.keys(DEBUG_CONFIG.tags || {}).filter(t => DEBUG_CONFIG.tags[t]) });
+    // Create console group for game logs
+    ensureConsoleGroup();
+    
+    window.log.info('[DebugLog] Logger initialized', { level, tags: Object.keys(config.tags || {}).filter(t => config.tags[t]) });
 }

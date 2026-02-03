@@ -1,15 +1,18 @@
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
+# MantaSphere Docker Image
+# Assumes dist/bundle.js is already built (via npm run build)
+# For local: npm run build && docker-compose up --build
+# For CI: GitHub Actions builds first, then this Dockerfile runs
 
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html/dist
-COPY --from=build /app/index.html /usr/share/nginx/html/
-COPY --from=build /app/assets /usr/share/nginx/html/assets
+
+# Copy pre-built bundle and static assets
+COPY dist /usr/share/nginx/html/dist
+COPY index.html /usr/share/nginx/html/
+COPY assets /usr/share/nginx/html/assets
+
+# Startup script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
+
 EXPOSE 80
 CMD ["/start.sh"]

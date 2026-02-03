@@ -17,7 +17,7 @@ MantaSphere is an **arcade-style score runner** built on these pillars:
 Built with:
 - **Three.js r134** (loaded via CDN, NOT npm)
 - **Vanilla JavaScript** with ES Modules
-- **No build system** - runs directly in browser
+- **esbuild bundling** - bundles to `dist/bundle.js` for fast dev/prod builds
 
 ## Critical Rules
 
@@ -394,12 +394,10 @@ The game includes an **in-game feedback collection system** for playtesting.
 - **Daily Sync**: GitHub Action reads sheet, posts summary comment to version thread
 
 #### Configuration
-Feedback requires `js/config/debug.local.js` with:
-```javascript
-export const PLAYTEST_CONFIG = {
-    url: 'https://script.google.com/...',
-    token: 'your-secret-token'
-};
+Feedback requires `.env` (gitignored) with:
+```env
+PLAYTEST_URL=https://script.google.com/...
+PLAYTEST_TOKEN=your-secret-token
 ```
 
 #### Key Files
@@ -418,7 +416,7 @@ export const PLAYTEST_CONFIG = {
 ### 14. Don'ts (IMPORTANT)
 
 - **DON'T** add npm dependencies
-- **DON'T** add a build system
+- **DON'T** add additional build systems or bundlers (keep it minimal; use existing esbuild setup)
 - **DON'T** use TypeScript
 - **DON'T** create circular imports
 - **DON'T** make early arenas too long
@@ -651,13 +649,10 @@ marker.innerCircle.material.opacity = 0.5;
 - **Never modify `gameState.health` directly** (except in `takeDamage`)
 
 #### Debug Logging
-- **Gate all console.log behind DEBUG flag:**
-```javascript
-import { DEBUG } from '../config/constants.js';
-if (DEBUG) console.log('[System] Message');
-```
-- **Keep console.warn for actual error conditions** - These should always log
-- **Rate-limit warnings that could spam** - Use a "warned" flag
+- **Use the logging framework** - See Section 17 (Observability & Debug Logging)
+- **DO NOT use raw console.log** - Always use `log()`, `logOnce()`, `logThrottled()` from `debugLog.js`
+- **Keep console.warn/error for actual errors** - Storage failures, missing features, etc.
+- **Rate-limit warnings that could spam** - Use `logThrottled()` or a "warned" flag
 - **Warnings in update loops should fire once, not every frame**
 ```javascript
 // BAD - spams console every frame
@@ -774,6 +769,9 @@ The game uses **loglevel** (CDN) with a thin wrapper (`js/systems/debugLog.js`) 
 | STATE | State machine transitions |
 | SAFETY | Caps, pauses, invariant violations |
 | PERF | Performance metrics (disabled by default) |
+| DEBUG | Debug menu operations, cheats |
+| MUSIC | PulseMusic system events |
+| PLAYTEST | Playtest feedback system |
 
 #### Logger API
 

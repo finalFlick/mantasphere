@@ -213,26 +213,28 @@ function testSetup() {
 
 1. Copy the example file:
    ```bash
-   cp js/config/debug.local.example.js js/config/debug.local.js
+   cp .env.example .env
    ```
 
-2. Edit `js/config/debug.local.js` and uncomment/fill in the PLAYTEST_CONFIG:
+2. Edit `.env` and fill in your values:
 
-```javascript
-export const DEBUG_SECRET = true;
-
-export const PLAYTEST_CONFIG = {
-  url: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
-  token: 'your-secret-token'
-};
+```env
+PLAYTEST_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
+PLAYTEST_TOKEN=your-secret-token
 ```
 
 | Field | Where to get it |
 |-------|-----------------|
-| `url` | The **Web app URL** from Step 4 (after clicking Deploy) |
-| `token` | The same token you set as `PLAYTEST_TOKEN` in Step 4's Script Properties |
+| `PLAYTEST_URL` | The **Web app URL** from Step 4 (after clicking Deploy) |
+| `PLAYTEST_TOKEN` | The same token you set as `PLAYTEST_TOKEN` in Step 4's Script Properties |
 
-> **Note:** `debug.local.js` is gitignored — your secrets won't be committed.
+3. Rebuild to inject the config:
+   ```bash
+   npm run build   # For production
+   npm run dev     # For development (watch mode)
+   ```
+
+> **Note:** `.env` is gitignored — your secrets won't be committed.
 
 ### Step 7: Create Playtest Label (1 min)
 
@@ -294,8 +296,9 @@ export const PLAYTEST_CONFIG = {
 - Verify the service account has Editor access to the Sheet
 
 ### "Invalid token" errors
-- Ensure the token in `debug.local.js` matches PLAYTEST_TOKEN in Apps Script
+- Ensure `PLAYTEST_TOKEN` in `.env` matches PLAYTEST_TOKEN in Apps Script
 - Check for trailing spaces or quotes
+- Rebuild after changing `.env` (`npm run build` or `npm run dev`)
 
 ### No rows marked as processed
 - Ensure the Sheet has a "Processed" column (Column N)
@@ -316,8 +319,8 @@ The easiest way to test your connection:
 5. Check the result:
    - **Green "Connected (Xms)"** = Everything working
    - **Red "CORS error"** = Apps Script needs "Anyone" access (create new deployment)
-   - **Red "Invalid URL"** = Wrong URL in debug.local.js
-   - **Red "Not configured"** = Missing PLAYTEST_CONFIG in debug.local.js
+   - **Red "Invalid URL"** = Wrong URL in `.env`
+   - **Red "Not configured"** = Missing PLAYTEST_URL/TOKEN in `.env` (rebuild required)
 
 The console will show detailed diagnostics including:
 - Token validation status

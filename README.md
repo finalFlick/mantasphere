@@ -6,33 +6,61 @@ A 3D arcade-style arena survival game built with Three.js. Survive waves of enem
 
 ## Quick Start
 
-### Option 1: Docker (Recommended)
+### Option 1: Unbundled Dev (Zero Setup)
 
 ```bash
-docker-compose up
+python -m http.server 8000
+```
+Then open http://localhost:8000/index.dev.html
+
+Debug enabled, no build required. Great for quick testing.
+
+### Option 2: All-in-One Dev (Recommended)
+
+```bash
+# First time: set up environment
+cp .env.example .env
+
+# Start dev server (watch + serve in one command)
+npm run dev
+```
+Then open http://localhost:8000
+
+Auto-rebuilds on file changes (~10ms). Refresh browser to see changes.
+
+### Option 3: Watch + Python Server
+
+```bash
+npm run watch          # Terminal 1: watch for changes
+python -m http.server  # Terminal 2: serve files
+```
+Then open http://localhost:8000
+
+### Option 4: Local Docker
+
+```bash
+npm run build              # Build production bundle
+docker-compose up --build  # Build and run container
 ```
 Then open http://localhost:8080
 
-Or manually:
+### Option 5: CI/Production (Unraid)
+
+Push a version tag to trigger GitHub Actions:
 ```bash
-docker build -t mantasphere .
-docker run -p 8080:80 mantasphere
+git tag v0.2.5
+git push origin v0.2.5
 ```
+Then pull on Unraid: `ghcr.io/finalflick/mantasphere:latest`
 
-### Option 2: Local Development
-
-ES modules require an HTTP server. Choose one:
-
-```bash
-# Python
-python -m http.server 8000
-
-# Node.js
-npx serve .
-
-# Or use VS Code "Live Server" extension
-```
-Then open http://localhost:8000
+**All Commands:**
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | All-in-one: watch + serve on port 8000 |
+| `npm run watch` | Watch only (use with external server) |
+| `npm run build` | Production build (minified, debug disabled) |
+| `npm run serve` | Start Python server on port 8000 |
+| `npm run start` | Build and serve in one command |
 
 ### Play
 
@@ -196,25 +224,47 @@ In `js/config/`:
 
 - **Three.js r134** - 3D rendering (CDN)
 - **ES Modules** - Native JavaScript modules
+- **esbuild** - Fast bundling (~50ms prod builds, ~10ms dev rebuilds)
 - **LocalStorage** - Score/badge persistence
-- **No build step** - Runs directly in browser
 - **Docker** - Optional containerized deployment
 
 ## Deployment
 
-### Docker
+### Local Docker
 ```bash
-docker-compose up -d
+npm run build              # Build production bundle first
+docker-compose up --build  # Build and run container
 ```
 
+### CI/CD (GitHub Actions → Unraid/Self-hosted)
+
+1. Add secrets to your GitHub repo (**Settings → Secrets → Actions**):
+   - `PLAYTEST_URL` - Your Apps Script URL
+   - `PLAYTEST_TOKEN` - Your playtest token
+
+2. Push a version tag:
+   ```bash
+   git tag v0.2.5
+   git push origin v0.2.5
+   ```
+
+3. GitHub Actions builds the image and pushes to `ghcr.io`
+
+4. On your server, pull and run:
+   ```bash
+   docker pull ghcr.io/finalflick/mantasphere:latest
+   docker-compose up -d
+   ```
+
 ### Static Hosting
-No backend required. Deploy to any static host:
+No backend required. Run `npm run build` then deploy `dist/`, `index.html`, and `assets/` to:
 - **GitHub Pages** - Push to `gh-pages` branch
 - **Netlify** - Connect repo, deploy automatically
 - **Vercel** - Import project, zero config
 
 ### Notes
 - Game data (scores, badges) uses LocalStorage (client-side only)
+- Playtest config is baked into the bundle at build time
 - No server-side persistence required
 
 ## Contributing

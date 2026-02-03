@@ -312,14 +312,16 @@ Follow the conventions in `.cursorrules`:
 
 ### Debug Logging
 
+Use the structured logging framework (see `.cursorrules` Section 17):
+
 ```javascript
-import { DEBUG } from '../config/constants.js';
-if (DEBUG) console.log('[System] Message');
+import { log, logWarn, logOnce, logThrottled } from '../systems/debugLog.js';
+log('TAG', 'event_name', { key: value });
 ```
 
-- Gate all `console.log` behind `DEBUG` flag
-- Keep `console.warn` for actual error conditions
-- Rate-limit warnings that could spam
+- **DO NOT use raw console.log** - Always use the framework
+- **Keep console.warn/error for actual errors** - Storage failures, missing features, etc.
+- **Rate-limit warnings that could spam** - Use `logThrottled()` or a "warned" flag
 
 ---
 
