@@ -5,6 +5,7 @@ import { cachePillarPositions } from '../entities/enemies.js';
 import { initAmbience, cleanupAmbience } from '../systems/ambience.js';
 import { clearAllPickups } from '../systems/pickups.js';
 import { initArena1ChaseState, resetArena1ChaseState } from '../core/gameState.js';
+import { addPufferkeepCastle, removePufferkeepCastle } from './pufferkeepCastle.js';
 
 // Arena landmarks (visual-only, no collision)
 const arenaLandmarks = [];
@@ -84,6 +85,9 @@ export function clearArenaGeometry() {
         scene.remove(lm);
     });
     arenaLandmarks.length = 0;
+    
+    // Clear Pufferkeep Castle (Arena 1 landmark)
+    removePufferkeepCastle();
     
     // Clear underwater ambience
     cleanupAmbience();
@@ -462,6 +466,9 @@ function addArena1Landmarks() {
         scene.add(warning);
         arenaLandmarks.push(warning);
     });
+    
+    // Pufferkeep Castle - King Red Puffer's throne backdrop
+    addPufferkeepCastle();
 }
 
 export function createObstacle(x, z, sizeX, height, sizeZ, material) {

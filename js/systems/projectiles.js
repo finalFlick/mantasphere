@@ -186,12 +186,18 @@ export function shootProjectile() {
     
     const now = Date.now();
     const fireRate = 500 / gameState.stats.attackSpeed;
-    if (now - lastShot < fireRate) return;
-    lastShot = now;
+    const timeSinceLastShot = now - lastShot;
+    const canShoot = timeSinceLastShot >= fireRate;
     
+    if (!canShoot) return;
+    
+    // Check for targets BEFORE updating lastShot
+    // This ensures the charge indicator only resets when an actual shot fires
     const projectileCount = Math.floor(gameState.stats.projectileCount);
     const targets = getNearestEnemies(projectileCount);
-    if (targets.length === 0) return;
+    if (targets.length === 0) return;  // No targets = no shot = don't reset timer
+    
+    lastShot = now;  // Only update after confirming we have targets
     
     for (let i = 0; i < projectileCount; i++) {
         const target = targets[i % targets.length];

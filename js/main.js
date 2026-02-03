@@ -89,15 +89,17 @@ function cleanupGameState() {
     resetTrail();
     resetParticles();
     resetPlayer();
-    resetInput();
-    cleanupInput();
+    resetInput();  // Resets camera angles and key states (does NOT remove listeners)
+    // NOTE: Do NOT call cleanupInput() here - input listeners must persist across game sessions.
+    // They are set up once in init() and should never be removed. resetInput() handles state reset.
     resetLastShot();
     resetDamageTime();
     resetActiveBadges();
     clearModulePickups();  // Clear hidden module pickups
     clearEnemyGeometryCache();
     clearGeometryCache();
-    cleanupAllListeners();
+    // NOTE: Do NOT call cleanupAllListeners() here - UI button listeners must persist
+    // across game sessions. They are set up once in init() and should never be removed.
     resetLogState();
     lastFrameTime = 0;
 }
@@ -125,6 +127,13 @@ function unlockMechanicsForArena(arenaNumber) {
 }
 
 async function init() {
+    // Guard against double initialization (would leak event listeners)
+    if (window.__mantaSphereInitialized) {
+        console.warn('init() called twice - skipping to prevent listener leaks');
+        return;
+    }
+    window.__mantaSphereInitialized = true;
+    
     // Initialize debug logger
     setGameStateRef(gameState);
     initLogger();

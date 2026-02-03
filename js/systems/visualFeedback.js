@@ -836,6 +836,13 @@ export function endCinematic() {
     cinematicTarget = null;
 }
 
+// Shorten cinematic to end after specified frames (for smooth transition)
+export function shortenCinematic(remainingFrames) {
+    if (cinematicActive && cinematicTimer > remainingFrames) {
+        cinematicTimer = remainingFrames;
+    }
+}
+
 // ==================== INTRO CINEMATIC ====================
 // Camera pan from high above the arena down to gameplay position
 

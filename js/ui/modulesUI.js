@@ -1,6 +1,6 @@
 // Modules UI - Display upgrades and modules progression screen
 import { CORE_UPGRADES } from '../config/upgrades.js';
-import { MODULE_CONFIG } from '../config/modules.js';
+import { MODULE_CONFIG, getCounterKeyForSource } from '../config/modules.js';
 import { getModuleLevel, getModuleCounter, loadModuleProgress } from '../systems/moduleProgress.js';
 
 // Show modules screen

@@ -200,6 +200,10 @@ function createMiniPorcupinefishMesh(size, color) {
     group.baseMaterial = bodyMat;
     group.isMiniPorcupinefish = true;
     
+    // Scale up visual and collision by 25% for better visibility
+    // NOTE: This intentionally increases collision radius too (enemies feel more substantial)
+    group.scale.setScalar(1.25);
+    
     return group;
 }
 
@@ -628,6 +632,11 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     enemy.isBoss = false;
     enemy.isElite = typeData.spawnWeight < 10;
     enemy.xpValue = Math.floor(typeData.xpValue * xpMult);
+    
+    // Wave progression XP bonus: +15% per wave after wave 1
+    const waveBonus = 1 + (gameState.currentWave - 1) * 0.15;
+    enemy.xpValue = Math.floor(enemy.xpValue * waveBonus);
+    
     enemy.baseColor = typeData.color;
     enemy.velocityY = 0;
     enemy.velocity = new THREE.Vector3();
@@ -1135,7 +1144,7 @@ export function spawnSplitEnemy(position, parentSize, index = 0, totalCount = 3)
     enemy.baseSize = size;
     enemy.isBoss = false;
     enemy.isElite = false;
-    enemy.xpValue = 1;
+    enemy.xpValue = 3;       // Tripled from 1
     enemy.baseColor = 0xff66ff;
     enemy.velocityY = 0;
     enemy.velocity = new THREE.Vector3();
@@ -1305,6 +1314,45 @@ export function spawnPillarPoliceOnAllPillars() {
 
 export function updateEnemies(delta) {
     const now = Date.now();
+    
+    // ==================== ENEMY-ENEMY SEPARATION ====================
+    // Push overlapping enemies apart to prevent stacking
+    // Only run when enough enemies to matter (O(n²) cost)
+    if (enemies.length >= 8) {
+        const SEPARATION_STRENGTH = 0.15;  // How strongly enemies push each other
+        const MIN_SEPARATION = 0.1;  // Minimum distance to apply separation
+        
+        for (let i = 0; i < enemies.length; i++) {
+        const enemyA = enemies[i];
+        const sizeA = enemyA.size || 0.5;
+        
+        for (let j = i + 1; j < enemies.length; j++) {
+            const enemyB = enemies[j];
+            const sizeB = enemyB.size || 0.5;
+            
+            const dx = enemyB.position.x - enemyA.position.x;
+            const dz = enemyB.position.z - enemyA.position.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const minDist = sizeA + sizeB;
+            
+            if (dist < minDist && dist > MIN_SEPARATION) {
+                // Calculate overlap amount
+                const overlap = minDist - dist;
+                
+                // Normalize direction
+                const nx = dx / dist;
+                const nz = dz / dist;
+                
+                // Push both enemies apart (half each)
+                const pushAmount = overlap * SEPARATION_STRENGTH;
+                enemyA.position.x -= nx * pushAmount;
+                enemyA.position.z -= nz * pushAmount;
+                enemyB.position.x += nx * pushAmount;
+                enemyB.position.z += nz * pushAmount;
+            }
+        }
+        }
+    }
     
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];

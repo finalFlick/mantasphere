@@ -49,7 +49,13 @@ export function initInput(rendererElement) {
     
     const clickHandler = () => {
         if (gameState.running && !isPointerLocked) {
-            rendererElement.requestPointerLock();
+            // Request pointer lock with error handling for cancelled requests
+            rendererElement.requestPointerLock().catch(err => {
+                // Silently handle pointer lock errors (user may have clicked UI or exited lock)
+                if (err.name !== 'SecurityError') {
+                    console.warn('Pointer lock request failed:', err);
+                }
+            });
         }
     };
     document.addEventListener('click', clickHandler);
