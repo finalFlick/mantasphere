@@ -30,9 +30,6 @@ function setVersion(version) {
 function updateIndexHtml(version) {
     let content = fs.readFileSync(INDEX_FILE, 'utf8');
     content = content.replace(/<div id="version-display">v[^<]+<\/div>/, `<div id="version-display">v${version}</div>`);
-    // Use timestamp for cache-busting (auto-updates each run)
-    const timestamp = Math.floor(Date.now() / 1000).toString(36);
-    content = content.replace(/src="js\/main\.js\?[^"]+"/, `src="js/main.js?t=${timestamp}"`);
     fs.writeFileSync(INDEX_FILE, content);
     console.log('  ✓ index.html');
 }
