@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const CONSTANTS_FILE = path.join(ROOT, 'js/config/constants.js');
@@ -28,6 +29,20 @@ function updateIndexHtml(version) {
     console.log('  ✓ index.html');
 }
 
+function createGitTag(version) {
+    const tag = `v${version}`;
+    try {
+        execSync(`git tag -a ${tag} -m "Release ${tag}"`, { cwd: ROOT, stdio: 'pipe' });
+        console.log(`  ✓ Git tag ${tag}`);
+        return true;
+    } catch (e) {
+        if (e.message.includes('already exists')) {
+            console.log(`  - Tag ${tag} already exists`);
+        }
+        return false;
+    }
+}
+
 const newVersion = process.argv[2];
 if (newVersion) {
     if (!/^\d+\.\d+\.\d+$/.test(newVersion)) {
@@ -41,4 +56,6 @@ const version = newVersion || getVersion();
 console.log(`Version: ${version}`);
 updateIndexHtml(version);
 fs.writeFileSync(VERSION_FILE, version + '\n');
-console.log('  ✓ VERSION\n');
+console.log('  ✓ VERSION');
+createGitTag(version);
+console.log('\nDone. Remember to push tags: git push --tags\n');
