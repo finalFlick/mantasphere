@@ -142,7 +142,7 @@ async function init() {
     // #region agent log
     console.log('[INIT] Starting non-blocking debug.local.js import');
     // #endregion
-    import('./config/debug.local.js')
+    import('/js/config/debug.local.js')
         .then(({ DEBUG_SECRET }) => {
             if (DEBUG_SECRET === true) {
                 enableDebugMode();
