@@ -1,0 +1,78 @@
+name: Tuning / Balance
+description: Adjust game balance or numbers
+labels: ["type:tuning"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggesting a balance change? Fill out the sections below.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence explaining the tuning change
+      placeholder: "Increase X from Y to Z"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current Behavior
+      description: What are the current values/behavior?
+      placeholder: |
+        - Enemy X has Y health
+        - Player deals Z damage
+        - Result: Takes N hits to kill
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed Change
+      description: What should the new values/behavior be?
+      placeholder: |
+        - Change enemy X health from Y to W
+        - Or change player damage from Z to V
+        - Result: Takes M hits to kill
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Why is this change needed?
+      placeholder: |
+        - Playtest feedback showed X
+        - Players felt Y was too Z
+        - Docs say intended behavior is W but actual is V
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      description: What system is being tuned?
+      options:
+        - Player (movement, combat, stats)
+        - Enemies (health, damage, spawning)
+        - Boss (phases, abilities, health)
+        - Arena (hazards, geometry)
+        - Upgrades (values, availability)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: How to Verify
+      description: How do we test the change feels right?
+      placeholder: |
+        1. Play arena X
+        2. Fight enemy Y
+        3. Should feel Z

@@ -265,6 +265,22 @@ if (DEBUG) console.log('[System] Message');
 
 ---
 
+## Release Checklist
+
+When shipping a new version:
+
+1. **Close all issues** in the milestone
+2. **Update CHANGELOG.md** with changes under the new version
+3. **Bump version** using `node scripts/bump-version.js X.Y.Z`
+4. **Commit** with `chore: bump version to X.Y.Z`
+5. **Push** to main
+6. **Close the milestone** on GitHub
+7. **Create GitHub Release** with notes from CHANGELOG.md
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
 ## Getting Help
 
 - **Design questions:** Read `PROMPTS.md` for design personas

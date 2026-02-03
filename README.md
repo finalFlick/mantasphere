@@ -105,7 +105,7 @@ Bosses are **puzzle tests** of learned mechanics, not just damage sponges:
 
 ## Roadmap
 
-See [GitHub Issues](https://github.com/finalFlick/mantasphere/issues) for planned features and [Milestones](https://github.com/finalFlick/mantasphere/milestones) for release planning.
+See [GitHub Issues](https://github.com/finalFlick/mantasphere/issues) for planned features, [Milestones](https://github.com/finalFlick/mantasphere/milestones) for release planning, and [Project Board](https://github.com/users/finalFlick/projects/1) for current progress.
 
 ### PULSE Adaptive Music System
 
