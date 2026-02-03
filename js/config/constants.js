@@ -1,6 +1,6 @@
 // Game Identity
 export const GAME_TITLE = 'Manta Sphere';
-export const VERSION = '0.2.1';  // Semantic versioning - see VERSION file and .cursorrules
+export const VERSION = '0.2.2';  // Semantic versioning - see VERSION file and .cursorrules
 export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_';
 
 // Debug Logging Configuration
@@ -24,6 +24,7 @@ export const DEBUG = DEBUG_CONFIG.level !== 'silent';
 
 // Game constants
 export const DAMAGE_COOLDOWN = 500;
+export const CINEMATIC_BOSS_HOLD_FRAMES = 120;  // 2 seconds at 60fps - camera holds on boss then returns
 export const PLAYER_JUMP_VELOCITY = 0.4;
 export const PLAYER_GRAVITY = 0.018;
 export const BOUNCE_FACTORS = [0.45, 0.2, 0.08];
@@ -115,16 +116,16 @@ export const THREAT_BUDGET = {
         waterBalloon: { durability: 25, damage: 10, cognitive: 4 }
     },
     waveBudgets: {
-        lesson: { total: 400, maxCognitive: 15 },
-        integration: { total: 750, maxCognitive: 30 },
-        exam: { total: 1250, maxCognitive: 40 }
+        lesson: { total: 800, maxCognitive: 20 },        // Doubled from 400, 15
+        integration: { total: 1500, maxCognitive: 40 },  // Doubled from 750, 30
+        exam: { total: 2500, maxCognitive: 50 }          // Doubled from 1250, 40
     },
     // Arena-specific budget overrides (applied before arena scaling)
     arenaBudgetOverrides: {
         1: {
-            lesson: { total: 350 },      // Tiny only (1-shot targets, ~39 tiny puffers)
-            integration: { total: 550 }, // Tiny + Standard mix
-            exam: { total: 750 }         // All three sizes - pressure test
+            lesson: { total: 700 },      // Doubled from 350 - more tiny puffers
+            integration: { total: 1100 }, // Doubled from 550 - more mixed enemies
+            exam: { total: 1500 }         // Doubled from 750 - more pressure
         }
     },
     arenaScaling: { 1: 1.0, 2: 1.2, 3: 1.4, 4: 1.6, 5: 1.8, 6: 2.0 }

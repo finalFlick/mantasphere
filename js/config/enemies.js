@@ -11,7 +11,7 @@ export const ENEMY_TYPES = {
         speed: 0.055,        // Faster (+57%)
         damage: 10,
         color: 0xff4444,     // Mid-red - between pink tiny and dark big
-        xpValue: 1,
+        xpValue: 3,          // Tripled from 1
         behavior: 'chase',
         spawnWeight: 40,
         arenaIntro: 1,       // Introduced in Arena 1
@@ -38,7 +38,7 @@ export const ENEMY_TYPES = {
         speed: 0.07,         // Faster than standard grunt
         damage: 5,           // Less threatening individually
         color: 0xffaaaa,     // Pink - clearly different from standard
-        xpValue: 0.5,
+        xpValue: 1.5,        // Tripled from 0.5
         behavior: 'chase',
         spawnWeight: 35,     // Higher weight - dominant in early waves
         arenaIntro: 1,       // Available in Arena 1
@@ -64,7 +64,7 @@ export const ENEMY_TYPES = {
         speed: 0.04,         // Slower than standard (0.055)
         damage: 15,          // More threatening
         color: 0x991111,     // Dark red - intimidating, clearly different
-        xpValue: 3,
+        xpValue: 9,          // Tripled from 3
         behavior: 'chase',
         spawnWeight: 15,     // Less common - pressure element
         arenaIntro: 1,       // Available in Arena 1
@@ -91,7 +91,7 @@ export const ENEMY_TYPES = {
         speed: 0.035,        // Faster (+40%)
         damage: 8,
         color: 0x22ff22,     // Bright green - ranged
-        xpValue: 2,
+        xpValue: 6,          // Tripled from 2
         behavior: 'shooter',
         shootRange: 15,
         shootCooldown: 2000,
@@ -120,7 +120,7 @@ export const ENEMY_TYPES = {
         speed: 0.045,        // Faster (+40%)
         damage: 12,
         color: 0x4444ff,     // Deep blue - tanky
-        xpValue: 3,
+        xpValue: 9,          // Tripled from 3
         behavior: 'chase',
         damageReduction: 0,  // Was 0.5, now shield replaces damage reduction
         shieldHP: 20,        // NEW: Shield health pool
@@ -150,7 +150,7 @@ export const ENEMY_TYPES = {
         speed: 0.12,
         damage: 8,
         color: 0xffff00,     // Pure yellow - fast
-        xpValue: 3,
+        xpValue: 9,          // Tripled from 3
         behavior: 'bouncer',
         spawnWeight: 20,     // Increased from 10 (Arena 4 signature)
         arenaIntro: 4,       // UPDATED: Now Arena 4 (was minArena: 2)
@@ -177,7 +177,7 @@ export const ENEMY_TYPES = {
         speed: 0.045,        // Faster (+50%)
         damage: 10,
         color: 0xff00ff,     // Bright magenta - splits
-        xpValue: 4,
+        xpValue: 12,         // Tripled from 4
         behavior: 'chase',
         onDeath: 'split',
         splitCount: 3,
@@ -205,7 +205,7 @@ export const ENEMY_TYPES = {
         speed: 0.055,        // Faster (+37%)
         damage: 18,
         color: 0xff8800,     // Orange - aggressive
-        xpValue: 4,
+        xpValue: 12,         // Tripled from 4
         behavior: 'shieldBreaker',
         rushRange: 8,
         rushSpeed: 0.15,
@@ -233,7 +233,7 @@ export const ENEMY_TYPES = {
         speed: 0.015,
         damage: 5,
         color: 0x00ffff,     // Cyan - grows/explodes
-        xpValue: 6,
+        xpValue: 18,         // Tripled from 6
         behavior: 'waterBalloon',
         growRate: 0.002,
         maxSize: 1.2,
@@ -263,7 +263,7 @@ export const ENEMY_TYPES = {
         speed: 0.03,
         damage: 15,
         color: 0x8800ff,     // Purple - warps
-        xpValue: 5,
+        xpValue: 15,         // Tripled from 5
         behavior: 'teleporter',
         teleportCooldown: 3000,
         teleportRange: 8,
@@ -290,7 +290,7 @@ export const ENEMY_TYPES = {
         speed: 0.06,         // Fast ground movement
         damage: 12,
         color: 0xffffff,     // White - stands out against dark pillars
-        xpValue: 4,
+        xpValue: 12,         // Tripled from 4
         behavior: 'pillarHopper',
         hopSpeed: 0.4,       // Fast hop between pillars
         pauseDuration: 30,   // 0.5 second pause after landing (faster response)

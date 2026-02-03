@@ -131,7 +131,7 @@ export function updateXpGems(delta) {
             while (gameState.xp >= gameState.xpToLevel) {
                 gameState.xp -= gameState.xpToLevel;
                 gameState.pendingLevelUps++;
-                gameState.xpToLevel = Math.floor(gameState.xpToLevel * 1.5);
+                gameState.xpToLevel = Math.floor(gameState.xpToLevel * 1.25);  // Reduced from 1.5x for faster progression
             }
             
             if (gameState.pendingLevelUps > 0 && !gameState.paused) {

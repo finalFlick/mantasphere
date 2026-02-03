@@ -4,7 +4,7 @@ import { player } from '../entities/player.js';
 import { spawnWaveEnemy } from '../entities/enemies.js';
 import { spawnBoss, spawnIntroMinions, triggerDemoAbility, endDemoMode, prepareBossForCutscene, endCutsceneAndRepositionPlayer } from '../entities/boss.js';
 import { clearAllPickups, updateArenaPortal, clearArenaPortal, spawnBossEntrancePortal, freezeBossEntrancePortal, updateBossEntrancePortal } from './pickups.js';
-import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION, SPAWN_CHOREOGRAPHY, DEBUG } from '../config/constants.js';
+import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION, SPAWN_CHOREOGRAPHY, DEBUG, CINEMATIC_BOSS_HOLD_FRAMES } from '../config/constants.js';
 import { ARENA_CONFIG, getArenaWaves } from '../config/arenas.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
 import { generateArena } from '../arena/generator.js';
@@ -23,7 +23,7 @@ import {
     updateUI 
 } from '../ui/hud.js';
 import { scene } from '../core/scene.js';
-import { startCinematic, triggerSlowMo, endCinematic } from './visualFeedback.js';
+import { startCinematic, triggerSlowMo, endCinematic, shortenCinematic } from './visualFeedback.js';
 import { log, logOnce, logThrottled, assert } from './debugLog.js';
 
 // Timing constants (in frames at 60fps) - tuned for 3-minute Arena 1 target
@@ -622,6 +622,9 @@ function handleBossIntro() {
                 endDemoMode(boss);
                 endCutsceneAndRepositionPlayer(boss);
                 
+                // Shorten cinematic so camera holds briefly on boss then returns
+                shortenCinematic(CINEMATIC_BOSS_HOLD_FRAMES);
+                
                 // Brief attack cooldown so boss doesn't charge immediately
                 boss.aiState = 'cooldown';
                 boss.aiTimer = 0;
@@ -692,6 +695,8 @@ function handleBossIntro() {
                     endDemoMode(boss);
                     // Safely reposition player and resume boss AI
                     endCutsceneAndRepositionPlayer(boss);
+                    // Shorten cinematic so camera holds briefly on boss then returns
+                    shortenCinematic(CINEMATIC_BOSS_HOLD_FRAMES);
                 }
                 gameState.bossActive = true;
                 gameState.waveState = WAVE_STATE.BOSS_ACTIVE;
@@ -709,6 +714,8 @@ function handleBossIntro() {
         if (boss) {
             // Safely reposition player and resume boss AI
             endCutsceneAndRepositionPlayer(boss);
+            // Shorten cinematic so camera holds briefly on boss then returns
+            shortenCinematic(CINEMATIC_BOSS_HOLD_FRAMES);
         }
         gameState.bossActive = true;
         gameState.waveState = WAVE_STATE.BOSS_ACTIVE;
