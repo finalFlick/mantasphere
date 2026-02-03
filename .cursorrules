@@ -19,6 +19,33 @@ Built with:
 - **Vanilla JavaScript** with ES Modules
 - **esbuild bundling** - bundles to `dist/bundle.js` for fast dev/prod builds
 
+## Clarifying Questions Protocol
+
+To avoid wrong implementations and wasted work, use **risk-based clarifying questions** when a request has ambiguity, branching choices, unclear success criteria, or high blast-radius.
+
+### When to ask questions (how many)
+
+| Situation | Ask |
+|----------|-----|
+| Fully specified, low-risk, no meaningful implementation choices | 0 questions (proceed) |
+| Simple / low ambiguity (small change, single obvious location) | 1–2 questions |
+| Moderate ambiguity (multiple valid implementations, tradeoffs, unclear constraints) | 2–3 questions |
+| Complex / confusing / high-risk (cross-system, unclear goals, wide scope, unclear repro/acceptance) | 4–10 questions |
+
+### Question quality rules
+
+- Ask only questions whose answers can **change the plan or code**.
+- Prefer **fewer, higher-leverage** questions over many small ones.
+- Keep questions **short and concrete**; offer **options** (a/b/c) when helpful.
+- If information is missing but a reasonable default exists, propose it explicitly and ask for confirmation.
+- Bundle clarifying questions into **one message** (don’t drip-feed).
+
+### Examples (quick rubric)
+
+- **“Fix this one error in `js/systems/waveSystem.js`” + exact stack trace provided**: 0–2 questions (only if multiple plausible fixes).
+- **“Add a new enemy” without desired role/spawn arena/behavior**: 2–3 questions.
+- **“Rebalance Arena 3 difficulty” without target difficulty, metrics, or pain point**: 4–10 questions.
+
 ## Critical Rules
 
 ### 1. Three.js Usage
@@ -985,6 +1012,7 @@ See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 - NO BACKLOG.md, FEATURES.md, PROJECT_STATE.md, or EPICS.md files
 - NO duplicate task tracking across files and GitHub
 - NO creating new state-tracking files
+- NO committing generated audit artifacts (e.g. `PRE_COMMIT_AUDIT.md`) — keep audits in chat, PR descriptions, or GitHub comments instead
 
 **File Purposes:**
 | File | Purpose | NOT For |
