@@ -139,7 +139,7 @@ See `.cursorrules` for complete development guidelines.
 
 ### GitHub App Bot Identity (for agents)
 
-If you want automated issue/comments to show as the agent bot (e.g., `manta-ai[bot]`) instead of your personal account:
+If you want automated issue/comments to show as the agent bot (e.g., `manta-warden`) instead of your personal account:
 
 1. Create a GitHub App: `https://github.com/settings/apps/new`
 2. Permissions (minimum):
