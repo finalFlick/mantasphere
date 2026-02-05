@@ -19,7 +19,7 @@ let config = {
 };
 
 /**
- * Initialize playtest feedback with config from debug.local.js
+ * Initialize playtest feedback with config from runtime config (.env build-time or Docker env at runtime)
  * @param {Object} cfg - { url: string, token: string }
  */
 export function initPlaytestFeedback(cfg) {
@@ -46,7 +46,7 @@ export async function testFeedbackConnection() {
     
     // Check if configured
     if (!isFeedbackEnabled()) {
-        const msg = 'Not configured - add PLAYTEST_CONFIG to debug.local.js';
+        const msg = 'Not configured - set PLAYTEST_URL and PLAYTEST_TOKEN (see docs/PLAYTEST_FORM_GUIDE.md)';
         console.warn('[Playtest] ' + msg);
         return { success: false, message: msg };
     }
@@ -294,7 +294,7 @@ async function handleSubmit() {
     
     if (!isFeedbackEnabled()) {
         console.warn('[Playtest] Feedback system not configured');
-        console.warn('  → Create js/config/debug.local.js with PLAYTEST_CONFIG');
+        console.warn('  → Set PLAYTEST_URL and PLAYTEST_TOKEN (see docs/PLAYTEST_FORM_GUIDE.md)');
         if (statusEl) {
             statusEl.textContent = 'Feedback system not configured';
             statusEl.className = 'feedback-status error';
@@ -378,7 +378,7 @@ async function handleSubmit() {
             const statusCode = response.status;
             console.error(`[Playtest] Server returned HTTP ${statusCode}`);
             if (statusCode === 401 || statusCode === 403) {
-                console.error('  → Token mismatch: Ensure token in debug.local.js matches PLAYTEST_TOKEN in Apps Script');
+                console.error('  → Token mismatch: Ensure PLAYTEST_TOKEN matches PLAYTEST_TOKEN in Apps Script');
             }
             throw new Error(`HTTP ${statusCode}`);
         }

@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.cjs",
-    "dev": "echo 'Open index.html directly for dev'",
+    "dev": "npx serve . -l 8000",
     "feedback-sync": "node scripts/feedback-sync.js"
   },
   "dependencies": {
