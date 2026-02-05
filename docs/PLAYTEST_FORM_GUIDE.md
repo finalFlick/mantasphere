@@ -211,28 +211,28 @@ function testSetup() {
 
 ### Step 6: Configure Game (2 min)
 
-1. Copy the example file:
+1. Copy the env template:
    ```bash
-   cp js/config/debug.local.example.js js/config/debug.local.js
+   cp .env.example .env
    ```
 
-2. Edit `js/config/debug.local.js` and uncomment/fill in the PLAYTEST_CONFIG:
+2. Edit `.env` and set:
+   ```bash
+   PLAYTEST_URL="https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec"
+   PLAYTEST_TOKEN="your-secret-token"
+   ```
 
-```javascript
-export const DEBUG_SECRET = true;
-
-export const PLAYTEST_CONFIG = {
-  url: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
-  token: 'your-secret-token'
-};
-```
+3. Rebuild the bundle so the config is written to `dist/manta-config.js`:
+   ```bash
+   npm run build
+   ```
 
 | Field | Where to get it |
 |-------|-----------------|
 | `url` | The **Web app URL** from Step 4 (after clicking Deploy) |
 | `token` | The same token you set as `PLAYTEST_TOKEN` in Step 4's Script Properties |
 
-> **Note:** `debug.local.js` is gitignored — your secrets won't be committed.
+> **Note:** `.env` is gitignored — your secrets won't be committed.
 
 ### Step 7: Create Playtest Label (1 min)
 
@@ -294,7 +294,7 @@ export const PLAYTEST_CONFIG = {
 - Verify the service account has Editor access to the Sheet
 
 ### "Invalid token" errors
-- Ensure the token in `debug.local.js` matches PLAYTEST_TOKEN in Apps Script
+- Ensure `PLAYTEST_TOKEN` in `.env` matches PLAYTEST_TOKEN in Apps Script
 - Check for trailing spaces or quotes
 
 ### No rows marked as processed
@@ -316,8 +316,8 @@ The easiest way to test your connection:
 5. Check the result:
    - **Green "Connected (Xms)"** = Everything working
    - **Red "CORS error"** = Apps Script needs "Anyone" access (create new deployment)
-   - **Red "Invalid URL"** = Wrong URL in debug.local.js
-   - **Red "Not configured"** = Missing PLAYTEST_CONFIG in debug.local.js
+   - **Red "Invalid URL"** = Wrong `PLAYTEST_URL` in `.env`
+   - **Red "Not configured"** = Missing `PLAYTEST_URL` / `PLAYTEST_TOKEN` in `.env`
 
 The console will show detailed diagnostics including:
 - Token validation status

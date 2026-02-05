@@ -17,7 +17,7 @@ MantaSphere is an **arcade-style score runner** built on these pillars:
 Built with:
 - **Three.js r134** (loaded via CDN, NOT npm)
 - **Vanilla JavaScript** with ES Modules
-- **No build system** - runs directly in browser
+- **esbuild bundling** (single `npm run build` step; no Webpack/Vite)
 
 ## Critical Rules
 
@@ -215,7 +215,10 @@ python -m http.server 8000
 | `js/ui/leaderboardUI.js` | Leaderboard display |
 | `js/ui/rosterUI.js` | Character roster (reads from enemy/boss configs) |
 | `scripts/feedback-sync.js` | GitHub Action: sync feedback to issues |
+| `scripts/gh-app-token.cjs` | GitHub App token generator (manta-warden) |
 | `.github/workflows/feedback-sync.yml` | Daily feedback sync workflow |
+| `.secrets/manta-warden.pem` | GitHub App private key (git-ignored) |
+| `.secrets/manta-warden.json` | GitHub App config (git-ignored) |
 
 ### 10. Documentation
 
@@ -394,13 +397,19 @@ The game includes an **in-game feedback collection system** for playtesting.
 - **Daily Sync**: GitHub Action reads sheet, posts summary comment to version thread
 
 #### Configuration
-Feedback requires `js/config/debug.local.js` with:
-```javascript
-export const PLAYTEST_CONFIG = {
-    url: 'https://script.google.com/...',
-    token: 'your-secret-token'
-};
+Feedback is configured via `.env` (local build-time) or Docker env vars (runtime):
+
+```bash
+# Local dev: copy template and fill in values
+cp .env.example .env
+
+# Required to enable feedback form submission
+PLAYTEST_URL="https://script.google.com/..."
+PLAYTEST_TOKEN="your-secret-token"
 ```
+
+`npm run build` reads `.env` and writes `dist/manta-config.js` (gitignored).
+**Secrets never touch tracked files** — `build.cjs` writes only to `dist/`, and Docker's `start.sh` injects at container startup via HTML markers.
 
 #### Key Files
 | File | Purpose |
@@ -418,7 +427,7 @@ export const PLAYTEST_CONFIG = {
 ### 14. Don'ts (IMPORTANT)
 
 - **DON'T** add npm dependencies
-- **DON'T** add a build system
+- **DON'T** add a complex build system (Webpack/Vite/etc). Keep the current esbuild workflow.
 - **DON'T** use TypeScript
 - **DON'T** create circular imports
 - **DON'T** make early arenas too long
@@ -443,7 +452,41 @@ export const PLAYTEST_CONFIG = {
 - **DON'T** create caches without a clear function (memory grows unbounded across sessions)
 - **DON'T** expose debug UI without guarding with DEBUG flag
 
-### 15. Quick Commands
+### 15. Manta-Warden GitHub App
+
+The project uses a **GitHub App** called [manta-warden](https://github.com/settings/apps/manta-warden) for automated issue management and bot-authored actions.
+
+#### Setup
+- **PEM key:** `.secrets/manta-warden.pem` (GitHub App private key — never commit)
+- **Config:** `.secrets/manta-warden.json` (App ID, slug, owner, repo)
+- **Token script:** `scripts/gh-app-token.cjs`
+
+#### Generating an Installation Token
+```bash
+# Print installation token (pipe into GH_TOKEN or API calls)
+node scripts/gh-app-token.cjs
+
+# Show app info (App ID, Installation ID, permissions)
+node scripts/gh-app-token.cjs --info
+```
+
+#### Usage in Scripts
+```javascript
+// Get token, then use with GitHub API
+const token = execSync('node scripts/gh-app-token.cjs', { encoding: 'utf8' }).trim();
+// All API calls with this token are authored by manta-warden[bot]
+```
+
+#### Permissions
+- `issues: write` — Create, edit, close issues
+- `metadata: read` — Read repo metadata
+
+#### Rules
+- **All automated issue creation** should use manta-warden (not personal accounts)
+- **Never commit `.secrets/`** — already in `.gitignore`
+- **PEM key rotation:** Download new key from GitHub App settings, replace `.secrets/manta-warden.pem`
+
+### 16. Quick Commands
 
 ```bash
 # Start local server
@@ -455,7 +498,7 @@ git commit -m "feat: description"
 git push
 ```
 
-### 16. Bug Prevention Checklist
+### 17. Bug Prevention Checklist
 
 These rules prevent common issues discovered during code reviews.
 
@@ -755,7 +798,7 @@ function restartGame() {
 - **Use crossorigin="anonymous"** for CDN resources
 - **Document how to regenerate hashes** if library is updated
 
-### 17. Observability & Debug Logging
+### 18. Observability & Debug Logging
 
 The game uses **loglevel** (CDN) with a thin wrapper (`js/systems/debugLog.js`) for structured debug logging.
 
@@ -846,7 +889,7 @@ log('SPAWN', 'enemy_spawned', { type: 'grunt', pos: { x, z } });
 2. Check state machine transitions (should see `wave_clear`)
 3. Look for `[SAFETY]` warnings
 
-### 18. Version Management (Semantic Versioning)
+### 19. Version Management (Semantic Versioning)
 
 The project follows **Semantic Versioning 2.0.0** (MAJOR.MINOR.PATCH) tracked in the `VERSION` file.
 
@@ -965,7 +1008,7 @@ git push origin vX.Y.Z
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### 19. Source of Truth Policy
+### 20. Source of Truth Policy
 
 **Work Items (tasks, bugs, features):**
 - GitHub Issues = ONLY source of truth

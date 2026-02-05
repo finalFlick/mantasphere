@@ -13,6 +13,18 @@ docker-compose up
 ```
 Then open http://localhost:8080
 
+To enable debug mode in Docker:
+
+```bash
+DEBUG_MODE=true docker-compose up
+```
+
+To enable playtest feedback in Docker:
+
+```bash
+PLAYTEST_URL="https://script.google.com/..." PLAYTEST_TOKEN="your-secret-token" docker-compose up
+```
+
 Or manually:
 ```bash
 docker build -t mantasphere .
@@ -21,9 +33,21 @@ docker run -p 8080:80 mantasphere
 
 ### Option 2: Local Development
 
-ES modules require an HTTP server. Choose one:
+Build the bundle, then run an HTTP server (required for modules/assets):
 
 ```bash
+# Install dependencies and build
+npm install
+
+# Optional: configure debug mode / playtest feedback
+cp .env.example .env
+# Edit .env (DEBUG_MODE / PLAYTEST_URL / PLAYTEST_TOKEN)
+
+npm run build
+
+# Dev server (recommended)
+npm run dev
+
 # Python
 python -m http.server 8000
 
@@ -197,7 +221,7 @@ In `js/config/`:
 - **Three.js r134** - 3D rendering (CDN)
 - **ES Modules** - Native JavaScript modules
 - **LocalStorage** - Score/badge persistence
-- **No build step** - Runs directly in browser
+- **esbuild** - Minimal bundling and minification (`npm run build`)
 - **Docker** - Optional containerized deployment
 
 ## Deployment
@@ -212,6 +236,8 @@ No backend required. Deploy to any static host:
 - **GitHub Pages** - Push to `gh-pages` branch
 - **Netlify** - Connect repo, deploy automatically
 - **Vercel** - Import project, zero config
+
+**Before deploying:** Run `npm run build` to generate `dist/bundle.js`.
 
 ### Notes
 - Game data (scores, badges) uses LocalStorage (client-side only)

@@ -59,27 +59,17 @@ The player character in SPHERESTORM is a **manta ray-inspired flying entity** th
 
 ---
 
-### Dash System
+### Dash Strike (Unlocked After Boss 1)
 
-**Activation:** Hold Shift while moving
+There is **no basic dash** at the start of the game.
 
-**Mechanics:**
-- Duration: 200ms (12 frames at 60fps)
-- Speed: 0.5 units/frame (3.3x base speed)
-- Cooldown: 1000ms (1 second)
-- Direction: Current movement direction (WASD input)
+**Unlock Condition:** Defeat **Boss 1** (Red Puffer King) once (Phase 3 kill) to unlock the **Dash Strike** module.
 
-**Properties:**
-- Can dash in any WASD direction
-- Does NOT grant invulnerability
-- Cannot be canceled mid-dash
-- Cooldown starts when dash begins
+**Activation:** Hold Shift while moving (once unlocked)
 
-**Usage:**
-- Quick repositioning
-- Dodging attacks
-- Gap closing
-- Emergency escapes
+**Notes:**
+- Before unlock: Shift does nothing
+- After unlock: Shift performs Dash Strike (see [Module System](#module-system))
 
 ---
 
@@ -409,7 +399,7 @@ Modules are persistent upgrades that carry across runs and feature mastery progr
 **Properties:**
 - Blocks ALL damage during recovery
 - Blocks shooting (cannot attack)
-- Does NOT block movement or dash
+- Does NOT block movement
 - Visual flashing indicates active
 
 **Flash Animation:**
@@ -479,7 +469,7 @@ if (hz.tickTimer >= hz.damageTickInterval) {
 **Appearance:** Fading blue trail particles
 
 **Spawn Conditions:**
-- Player is moving (WASD or dash)
+- Player is moving (WASD or Dash Strike)
 - Player is grounded
 - Distance since last trail > threshold (0.5 units)
 
@@ -558,7 +548,7 @@ if (hz.tickTimer >= hz.damageTickInterval) {
 | S | Move Backward | Camera-relative |
 | D | Strafe Right | 50% speed |
 | Space | Jump | Only when grounded |
-| Shift | Dash | Hold while moving, 1s cooldown |
+| Shift | Dash Strike | Unlocked after Boss 1 |
 | ESC | Pause/Unlock | Exits pointer lock |
 
 ### Mouse
@@ -631,7 +621,7 @@ export function createPlayer() {
 
 **Update Order:**
 1. Calculate movement direction (WASD + camera)
-2. Apply dash or normal movement
+2. Apply Dash Strike or normal movement
 3. Platform collision (horizontal)
 4. Jump input check
 5. Apply gravity

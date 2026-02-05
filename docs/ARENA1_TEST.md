@@ -86,6 +86,8 @@ This document lists all Arena 1 features implemented, organized for manual testi
 - **3.1 Random Spawns** - Wave 1 uses random edge spawns
 - **3.2 Lane Flood** - Wave 2 spawns from single direction
 - **3.3 Pincer** - Wave 3 spawns from opposite edges
+- **3.4 Flank** - Waves 4-5: dominant direction + perpendicular flanks
+- **3.5 Burst** - Waves 6-7: any direction spawns (high pressure)
 
 ### Test Points
 
@@ -94,6 +96,8 @@ This document lists all Arena 1 features implemented, organized for manual testi
 | E3-1 | Wave 1 Pattern | Spawns from random edges | `[Choreography]` |
 | E3-2 | Wave 2 Pattern | Spawns from one dominant edge | `[Choreography]` |
 | E3-3 | Wave 3 Pattern | Spawns alternate between 2 opposite edges | `[Choreography]` |
+| E3-4 | Waves 4-5 Pattern | Spawns mostly from one edge with some perpendicular flanks | `[Choreography]` |
+| E3-5 | Waves 6-7 Pattern | Spawns can come from any edge (burst pattern) | `[Choreography]` |
 
 ### Debug Logs
 ```
@@ -102,6 +106,36 @@ This document lists all Arena 1 features implemented, organized for manual testi
 ```
 
 ---
+
+## Epic 3B: Spawn Fairness Bias (Forward Arc)
+
+**Goal:** Reduce “rear spawn” moments that feel off-screen/unfair.
+
+### Features
+- **3B.1 Forward 180° Bias** - When possible, spawns are chosen from a forward arc relative to player movement
+
+### Test Points
+
+| ID | Feature | Expected Behavior | Log Tag |
+|----|---------|-------------------|---------|
+| E3B-1 | Rear Spawn Reduction | Spawns rarely appear directly behind player movement | `[SpawnFairness]` |
+
+---
+
+## Epic 3C: Arena 1 Explicit Budget Breathes
+
+**Goal:** Add readable “breathing room” at fixed points in the wave.
+
+### Features
+- **3C.1 50% Budget Breather** - After ~50% of wave budget is spent, pause spawns ~2 seconds
+- **3C.2 75% Budget Breather** - After ~75% of wave budget is spent, pause spawns ~1 second
+
+### Test Points
+
+| ID | Feature | Expected Behavior | Log Tag |
+|----|---------|-------------------|---------|
+| E3C-1 | 50% Breather | Spawns pause briefly around midpoint of wave | `[Pacing]` |
+| E3C-2 | 75% Breather | Spawns pause briefly near end of wave | `[Pacing]` |
 
 ## Epic 4: Boss Chase Orchestrator
 
