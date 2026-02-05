@@ -106,6 +106,14 @@ All bosses spawn from an **entrance portal** that appears before the boss:
 | 2     | 66-33%   | 1.2           | 0.5           | Charge → Summon combos |
 | 3     | 33-0%    | 1.5           | 0.7           | Aggressive combos |
 
+**Arena 1 Boss Chase (Retreat System):**
+- The Red Puffer King appears multiple times across Arena 1 (3 boss encounters).
+- Retreat triggers:
+  - End of Phase 1 encounter: retreats at ~66% HP
+  - End of Phase 2 encounter: retreats at ~33% HP
+- **HP persists** across encounters (it does not reset).
+- HUD behavior: the boss HP bar stays visible but **dimmed** while the King is away, then returns to full visibility when the fight resumes.
+
 **Arena Enemies:**
 - Red Puffers (primary wave enemy)
 - Fast Bouncers (boss summons)

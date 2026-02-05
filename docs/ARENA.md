@@ -78,9 +78,22 @@ Victory → Next Arena
 **Geometry:**
 - Flat rectangular arena
 - Corner landmarks for orientation
+- Center reset pad marker (visual-only orientation anchor, radius ~12)
 - No obstacles or cover
 - Anti-edge spawn bias (discourages corner camping)
 - Min distance from corner: 15 units
+
+**Spawn Readability (Arena 1 specific):**
+- Spawns prefer a **forward 180° arc** relative to player movement when possible (reduces rear “off-screen” spawns)
+- Wave choreography:
+  - Wave 1: random spawns
+  - Wave 2: lane spawns (single direction flood)
+  - Wave 3: pincer spawns (two opposing directions)
+  - Waves 4-5: flank spawns (dominant direction + perpendicular pressure)
+  - Waves 6-7: burst spawns (any direction)
+- Pacing breathers:
+  - Explicit micro-breathers at ~50% and ~75% wave budget cleared (spawn pause only)
+  - Additional cadence breathers occur after a fixed spawn count (system-wide)
 
 **Wave Breakdown:**
 1. **Wave 1** (Lesson): Few Red Puffers, learn controls

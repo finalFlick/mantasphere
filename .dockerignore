@@ -1,5 +1,11 @@
+.env
+.secrets/
+.cursor/
 .git
 .gitignore
 .cursorrules
 docs/
 *.md
+node_modules/
+todo.txt
+dist/

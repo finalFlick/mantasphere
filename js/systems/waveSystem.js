@@ -17,6 +17,7 @@ import {
     showBossAnnouncement, 
     hideBossAnnouncement,
     hideBossHealthBar,
+    updateBossHealthBar,
     showUnlockNotification,
     showBadgeUnlock,
     showModifierAnnouncement,
@@ -25,7 +26,7 @@ import {
 } from '../ui/hud.js';
 import { showFeedbackOverlay, isFeedbackEnabled } from './playtestFeedback.js';
 import { scene } from '../core/scene.js';
-import { startCinematic, triggerSlowMo, endCinematic, shortenCinematic } from './visualFeedback.js';
+import { startCinematic, triggerSlowMo, triggerScreenFlash, endCinematic, shortenCinematic } from './visualFeedback.js';
 import { log, logOnce, logThrottled, assert } from './debugLog.js';
 
 // Timing constants (in frames at 60fps) - tuned for 3-minute Arena 1 target
@@ -135,6 +136,11 @@ function handleWaveIntro() {
         // Micro-breather tracking
         gameState.microBreatherActive = false;
         gameState.microBreatherTimer = 0;
+        gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
+        
+        // Arena 1 explicit budget breathers (one-time triggers per wave)
+        gameState.arena1BudgetBreather50 = false;
+        gameState.arena1BudgetBreather75 = false;
         gameState.stressPauseActive = false;
         gameState.waveSpawnWarned = false; // Reset spawn warning flag
         
@@ -178,7 +184,8 @@ function initializeWaveChoreography() {
     gameState.waveChoreography = {
         type: choreographyType,
         primaryDirection: null,
-        secondaryDirection: null
+        secondaryDirection: null,
+        flankDirections: null
     };
     
     if (choreographyType === 'random' || !SPAWN_CHOREOGRAPHY.enabled) {
@@ -200,6 +207,20 @@ function initializeWaveChoreography() {
             gameState.waveChoreography.primaryDirection = 'east';
             gameState.waveChoreography.secondaryDirection = 'west';
         }
+    } else if (choreographyType === 'flank') {
+        // Pick a primary direction, then define two perpendicular flank directions
+        const primary = directions[Math.floor(Math.random() * directions.length)];
+        gameState.waveChoreography.primaryDirection = primary;
+        if (primary === 'north' || primary === 'south') {
+            gameState.waveChoreography.flankDirections = ['east', 'west'];
+        } else {
+            gameState.waveChoreography.flankDirections = ['north', 'south'];
+        }
+    } else if (choreographyType === 'burst') {
+        // No pre-selection needed; enemies will spawn from any direction
+        gameState.waveChoreography.primaryDirection = null;
+        gameState.waveChoreography.secondaryDirection = null;
+        gameState.waveChoreography.flankDirections = null;
     }
     
     // Log wave spawn pattern
@@ -208,6 +229,7 @@ function initializeWaveChoreography() {
         primary: gameState.waveChoreography.primaryDirection,
         secondary: gameState.waveChoreography.secondaryDirection
     });
+    
 }
 
 // Select wave modifier based on arena and wave
@@ -321,6 +343,36 @@ function handleWaveActive() {
     }
     gameState.stressPauseActive = false;
     
+    // Arena 1 explicit budget breathers (50% + 75% budget cleared)
+    // These pause spawning only (enemies still move/attack), but create a readable intensity dip.
+    if (gameState.currentArena === 1 &&
+        !gameState.microBreatherActive &&
+        gameState.waveBudgetTotal > 0 &&
+        gameState.waveBudgetRemaining > 0) {
+        
+        const remainingRatio = gameState.waveBudgetRemaining / gameState.waveBudgetTotal;
+        
+        // After 50% spent => remaining <= 50%
+        if (!gameState.arena1BudgetBreather50 && remainingRatio <= 0.5) {
+            gameState.arena1BudgetBreather50 = true;
+            gameState.microBreatherActive = true;
+            gameState.microBreatherTimer = 0;
+            gameState.microBreatherTargetDuration = 120; // 2 seconds at 60fps
+            triggerScreenFlash(0x4488ff, 3);
+            PulseMusic.onBreatherStart?.();
+        }
+        
+        // After 75% spent => remaining <= 25%
+        if (!gameState.microBreatherActive && !gameState.arena1BudgetBreather75 && remainingRatio <= 0.25) {
+            gameState.arena1BudgetBreather75 = true;
+            gameState.microBreatherActive = true;
+            gameState.microBreatherTimer = 0;
+            gameState.microBreatherTargetDuration = 60; // 1 second at 60fps
+            triggerScreenFlash(0x4488ff, 2);
+            PulseMusic.onBreatherStart?.();
+        }
+    }
+    
     // Check for micro-breather
     if (gameState.waveSpawnCount > 0 && 
         gameState.waveSpawnCount % PACING_CONFIG.microBreatherInterval === 0 && 
@@ -329,19 +381,22 @@ function handleWaveActive() {
         
         gameState.microBreatherActive = true;
         gameState.microBreatherTimer = 0;
+        gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
         PulseMusic.onBreatherStart();
     }
     
     // Handle micro-breather duration
     if (gameState.microBreatherActive) {
         gameState.microBreatherTimer++;
-        if (gameState.microBreatherTimer < PACING_CONFIG.microBreatherDuration) {
+        const target = gameState.microBreatherTargetDuration || PACING_CONFIG.microBreatherDuration;
+        if (gameState.microBreatherTimer < target) {
             checkWaveComplete();
             return; // Pause spawning
         }
         // Breather complete
         gameState.microBreatherActive = false;
         gameState.microBreatherTimer = 0;
+        gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
         PulseMusic.onBreatherEnd();
     }
     
@@ -385,15 +440,15 @@ function handleWaveActive() {
     if (gameState.currentArena === 1) {
         // Wave number determines starting interval (later waves start faster)
         const waveStartIntervals = {
-            1: 2000,  // Wave 1: very relaxed start (2.0s)
-            2: 1500,  // Wave 2: moderate start (1.5s)
-            3: 1200,  // Wave 3: quicker start (1.2s)
+            1: 2500,  // Wave 1: very relaxed start (2.5s)
+            2: 1700,  // Wave 2: +200ms base
+            3: 1400,  // Wave 3: +200ms base
             4: 1000,  // Waves 4+: fast start (1.0s)
         };
         
         // Floor intervals (fastest each wave type can get)
         const waveFloorIntervals = {
-            1: 1000,  // Wave 1 floor: 1.0s (never frantic)
+            1: 1200,  // Wave 1 floor: 1.2s (never frantic)
             2: 700,   // Wave 2 floor: 0.7s
             3: 500,   // Wave 3 floor: 0.5s
             4: 400,   // Waves 4+ floor: 0.4s
@@ -952,6 +1007,15 @@ function completeRetreat(boss) {
         gameState.arena1ChaseState.segment++;
         gameState.arena1ChaseState.bossEncounterCount++;
         
+        // Tutorial callouts to explain the chase structure (shown once each)
+        if (gameState.currentArena === 1) {
+            if (gameState.arena1ChaseState.bossEncounterCount === 1) {
+                showTutorialCallout('boss-retreat-1', "The King retreats... he'll return stronger!", 2600);
+            } else if (gameState.arena1ChaseState.bossEncounterCount === 2) {
+                showTutorialCallout('boss-retreat-2', 'One more time... prepare for his final form!', 2600);
+            }
+        }
+        
         log('BOSS', 'retreat_complete', {
             segment: gameState.arena1ChaseState.segment,
             encounters: gameState.arena1ChaseState.bossEncounterCount,
@@ -965,8 +1029,8 @@ function completeRetreat(boss) {
     // Freeze remaining enemies briefly
     freezeAllEnemies(60);  // 1 second freeze
     
-    // Hide boss health bar
-    hideBossHealthBar();
+    // Keep boss bar visible (dimmed + persistent HP) so players understand it will return
+    updateBossHealthBar();
     
     // Reset boss active flag
     gameState.bossActive = false;
@@ -975,6 +1039,7 @@ function completeRetreat(boss) {
     gameState.currentWave++;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
     gameState.waveTimer = 0;
+    updateUI();
     
     log('STATE', 'boss_return_to_waves', { nextWave: gameState.currentWave });
 }
