@@ -438,12 +438,11 @@ PLAYTEST_TOKEN=your-secret-token
 | `js/systems/playtestFeedback.js` | Form UI and submission logic |
 | `scripts/feedback-sync.js` | GitHub Action sync script |
 | `.github/workflows/feedback-sync.yml` | Daily sync workflow |
-| `docs/playtests/*.md` | Auto-generated feedback summaries |
 
 #### GitHub Thread Model
 - **One issue per major.minor version** (e.g., `[Playtest] Feedback Thread - v0.2.x`)
 - **Daily comments** with aggregated stats (only if new feedback)
-- **Raw data** committed to `docs/playtests/YYYY-MM-DD.md`
+- **Raw data** stored in Google Sheets (original source of truth)
 
 ### 14. Don'ts (IMPORTANT)
 
@@ -485,7 +484,30 @@ git commit -m "feat: description"
 git push
 ```
 
-### 16. Bug Prevention Checklist
+### 16. Commit Authorship
+
+**All commits MUST be authored by `finalFlick`.**
+
+**Required git config:**
+```bash
+git config user.name "finalFlick"
+git config user.email "finalFlick@users.noreply.github.com"
+```
+
+**Before ANY commit, the agent MUST:**
+1. Run `git config user.name` and `git config user.email`
+2. If either is NOT `finalFlick` / `finalFlick@users.noreply.github.com`:
+   - Run: `git config user.name "finalFlick"`
+   - Run: `git config user.email "finalFlick@users.noreply.github.com"`
+3. Only then proceed with the commit
+
+**This check is MANDATORY** - do not skip it, do not assume it's correct.
+
+**Exception:** If the user explicitly requests a commit as a different identity, confirm with them first ("You want me to commit as X - is that correct?"), then proceed if confirmed.
+
+**manta-warden** handles GitHub issues/comments only (not commits).
+
+### 17. Bug Prevention Checklist
 
 These rules prevent common issues discovered during code reviews.
 
@@ -782,7 +804,7 @@ function restartGame() {
 - **Use crossorigin="anonymous"** for CDN resources
 - **Document how to regenerate hashes** if library is updated
 
-### 17. Observability & Debug Logging
+### 18. Observability & Debug Logging
 
 The game uses **loglevel** (CDN) with a thin wrapper (`js/systems/debugLog.js`) for structured debug logging.
 
@@ -876,7 +898,7 @@ log('SPAWN', 'enemy_spawned', { type: 'grunt', pos: { x, z } });
 2. Check state machine transitions (should see `wave_clear`)
 3. Look for `[SAFETY]` warnings
 
-### 18. Version Management (Semantic Versioning)
+### 19. Version Management (Semantic Versioning)
 
 The project follows **Semantic Versioning 2.0.0** (MAJOR.MINOR.PATCH) tracked in the `VERSION` file.
 
@@ -995,7 +1017,7 @@ git push origin vX.Y.Z
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### 19. Source of Truth Policy
+### 20. Source of Truth Policy
 
 **Work Items (tasks, bugs, features):**
 - GitHub Issues = ONLY source of truth

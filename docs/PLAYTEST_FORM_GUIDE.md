@@ -301,8 +301,8 @@ PLAYTEST_TOKEN=your-secret-token
 3. If new rows exist:
    - Creates/finds version thread (e.g., `[Playtest] Feedback Thread - v0.2.x`)
    - Posts daily summary comment
-   - Commits raw data to `docs/playtests/YYYY-MM-DD.md`
    - Marks rows as processed
+4. Raw data remains in Google Sheets (source of truth)
 
 ---
 

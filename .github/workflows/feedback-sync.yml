@@ -8,7 +8,7 @@ on:
     # Allow manual trigger for testing
 
 permissions:
-  contents: write
+  contents: read
   issues: write
 
 jobs:
@@ -50,11 +50,3 @@ jobs:
           GSHEET_CREDS_JSON: ${{ secrets.GSHEET_CREDS_JSON }}
           GITHUB_TOKEN: ${{ steps.manta-warden-token.outputs.token }}
         run: node scripts/feedback-sync.js
-
-      - name: Commit docs if changed
-        run: |
-          git config user.name "manta-warden[bot]"
-          git config user.email "${{ secrets.GH_APP_ID }}+manta-warden[bot]@users.noreply.github.com"
-          git add docs/playtests/ || true
-          git diff --cached --quiet || git commit -m "chore: sync playtest feedback"
-          git push
