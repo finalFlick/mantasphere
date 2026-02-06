@@ -4,18 +4,20 @@ import { player } from '../entities/player.js';
 import { spawnWaveEnemy } from '../entities/enemies.js';
 import { spawnBoss, spawnIntroMinions, triggerDemoAbility, endDemoMode, prepareBossForCutscene, endCutsceneAndRepositionPlayer } from '../entities/boss.js';
 import { clearAllPickups, updateArenaPortal, clearArenaPortal, spawnBossEntrancePortal, freezeBossEntrancePortal, updateBossEntrancePortal } from './pickups.js';
-import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION, SPAWN_CHOREOGRAPHY, DEBUG, CINEMATIC_BOSS_HOLD_FRAMES } from '../config/constants.js';
+import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION, SPAWN_CHOREOGRAPHY, CINEMATIC_BOSS_HOLD_FRAMES } from '../config/constants.js';
 import { ARENA_CONFIG, getArenaWaves } from '../config/arenas.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
 import { generateArena } from '../arena/generator.js';
 import { awardArenaBadge } from './badges.js';
 import { PulseMusic } from './pulseMusic.js';
+import { TUNING } from '../config/tuning.js';
 import { 
     showWaveAnnouncement, 
     hideWaveAnnouncement, 
     showBossAnnouncement, 
     hideBossAnnouncement,
     hideBossHealthBar,
+    updateBossHealthBar,
     showUnlockNotification,
     showBadgeUnlock,
     showModifierAnnouncement,
@@ -24,7 +26,7 @@ import {
 } from '../ui/hud.js';
 import { showFeedbackOverlay, isFeedbackEnabled } from './playtestFeedback.js';
 import { scene } from '../core/scene.js';
-import { startCinematic, triggerSlowMo, endCinematic, shortenCinematic } from './visualFeedback.js';
+import { startCinematic, triggerSlowMo, triggerScreenFlash, endCinematic, shortenCinematic } from './visualFeedback.js';
 import { log, logOnce, logThrottled, assert } from './debugLog.js';
 
 // Timing constants (in frames at 60fps) - tuned for 3-minute Arena 1 target
@@ -33,6 +35,18 @@ const WAVE_CLEAR_FRAMES = 90;        // 1.5 seconds - brief victory moment
 const BOSS_INTRO_FRAMES = 60;        // 1 second - dramatic entrance without delay
 const BOSS_DEFEATED_FRAMES = 120;    // 2 seconds - satisfying victory beat
 const ARENA_TRANSITION_FRAMES = 60;  // 1 second
+
+function getStressPauseThreshold() {
+    const raw = Number(TUNING.stressPauseThreshold);
+    if (Number.isFinite(raw)) return Math.max(1, Math.round(raw));
+    return PACING_CONFIG.stressPauseThreshold;
+}
+
+function getWaveClearFrames() {
+    const seconds = Number(TUNING.breathingRoomSeconds);
+    if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 60));
+    return WAVE_CLEAR_FRAMES;
+}
 
 export function updateWaveSystem() {
     switch (gameState.waveState) {
@@ -122,6 +136,11 @@ function handleWaveIntro() {
         // Micro-breather tracking
         gameState.microBreatherActive = false;
         gameState.microBreatherTimer = 0;
+        gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
+        
+        // Arena 1 explicit budget breathers (one-time triggers per wave)
+        gameState.arena1BudgetBreather50 = false;
+        gameState.arena1BudgetBreather75 = false;
         gameState.stressPauseActive = false;
         gameState.waveSpawnWarned = false; // Reset spawn warning flag
         
@@ -133,7 +152,7 @@ function handleWaveIntro() {
         
         // Track wave start for speed bonus calculation (frame-based)
         gameState.waveFrameCounter = 0;
-        if (DEBUG) console.log(`[SpeedBonus] Wave ${gameState.currentWave} start recorded`);
+        log('SCORE', 'speed_bonus_start', { wave: gameState.currentWave });
         
         // Log wave start with full context (using waveType from above)
         log('WAVE', 'start', {
@@ -165,7 +184,8 @@ function initializeWaveChoreography() {
     gameState.waveChoreography = {
         type: choreographyType,
         primaryDirection: null,
-        secondaryDirection: null
+        secondaryDirection: null,
+        flankDirections: null
     };
     
     if (choreographyType === 'random' || !SPAWN_CHOREOGRAPHY.enabled) {
@@ -187,6 +207,20 @@ function initializeWaveChoreography() {
             gameState.waveChoreography.primaryDirection = 'east';
             gameState.waveChoreography.secondaryDirection = 'west';
         }
+    } else if (choreographyType === 'flank') {
+        // Pick a primary direction, then define two perpendicular flank directions
+        const primary = directions[Math.floor(Math.random() * directions.length)];
+        gameState.waveChoreography.primaryDirection = primary;
+        if (primary === 'north' || primary === 'south') {
+            gameState.waveChoreography.flankDirections = ['east', 'west'];
+        } else {
+            gameState.waveChoreography.flankDirections = ['north', 'south'];
+        }
+    } else if (choreographyType === 'burst') {
+        // No pre-selection needed; enemies will spawn from any direction
+        gameState.waveChoreography.primaryDirection = null;
+        gameState.waveChoreography.secondaryDirection = null;
+        gameState.waveChoreography.flankDirections = null;
     }
     
     // Log wave spawn pattern
@@ -195,6 +229,7 @@ function initializeWaveChoreography() {
         primary: gameState.waveChoreography.primaryDirection,
         secondary: gameState.waveChoreography.secondaryDirection
     });
+    
 }
 
 // Select wave modifier based on arena and wave
@@ -297,7 +332,7 @@ function handleWaveActive() {
     const isExamWave = (gameState.currentWave === maxWaves);
     
     // Check for stress pause (too many enemies alive)
-    if (enemies.length >= PACING_CONFIG.stressPauseThreshold) {
+    if (enemies.length >= getStressPauseThreshold()) {
         if (!gameState.stressPauseActive) {
             gameState.stressPauseActive = true;
             // Optional: signal music to dip
@@ -308,6 +343,36 @@ function handleWaveActive() {
     }
     gameState.stressPauseActive = false;
     
+    // Arena 1 explicit budget breathers (50% + 75% budget cleared)
+    // These pause spawning only (enemies still move/attack), but create a readable intensity dip.
+    if (gameState.currentArena === 1 &&
+        !gameState.microBreatherActive &&
+        gameState.waveBudgetTotal > 0 &&
+        gameState.waveBudgetRemaining > 0) {
+        
+        const remainingRatio = gameState.waveBudgetRemaining / gameState.waveBudgetTotal;
+        
+        // After 50% spent => remaining <= 50%
+        if (!gameState.arena1BudgetBreather50 && remainingRatio <= 0.5) {
+            gameState.arena1BudgetBreather50 = true;
+            gameState.microBreatherActive = true;
+            gameState.microBreatherTimer = 0;
+            gameState.microBreatherTargetDuration = 120; // 2 seconds at 60fps
+            triggerScreenFlash(0x4488ff, 3);
+            PulseMusic.onBreatherStart?.();
+        }
+        
+        // After 75% spent => remaining <= 25%
+        if (!gameState.microBreatherActive && !gameState.arena1BudgetBreather75 && remainingRatio <= 0.25) {
+            gameState.arena1BudgetBreather75 = true;
+            gameState.microBreatherActive = true;
+            gameState.microBreatherTimer = 0;
+            gameState.microBreatherTargetDuration = 60; // 1 second at 60fps
+            triggerScreenFlash(0x4488ff, 2);
+            PulseMusic.onBreatherStart?.();
+        }
+    }
+    
     // Check for micro-breather
     if (gameState.waveSpawnCount > 0 && 
         gameState.waveSpawnCount % PACING_CONFIG.microBreatherInterval === 0 && 
@@ -316,19 +381,22 @@ function handleWaveActive() {
         
         gameState.microBreatherActive = true;
         gameState.microBreatherTimer = 0;
+        gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
         PulseMusic.onBreatherStart();
     }
     
     // Handle micro-breather duration
     if (gameState.microBreatherActive) {
         gameState.microBreatherTimer++;
-        if (gameState.microBreatherTimer < PACING_CONFIG.microBreatherDuration) {
+        const target = gameState.microBreatherTargetDuration || PACING_CONFIG.microBreatherDuration;
+        if (gameState.microBreatherTimer < target) {
             checkWaveComplete();
             return; // Pause spawning
         }
         // Breather complete
         gameState.microBreatherActive = false;
         gameState.microBreatherTimer = 0;
+        gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
         PulseMusic.onBreatherEnd();
     }
     
@@ -372,15 +440,15 @@ function handleWaveActive() {
     if (gameState.currentArena === 1) {
         // Wave number determines starting interval (later waves start faster)
         const waveStartIntervals = {
-            1: 2000,  // Wave 1: very relaxed start (2.0s)
-            2: 1500,  // Wave 2: moderate start (1.5s)
-            3: 1200,  // Wave 3: quicker start (1.2s)
+            1: 2500,  // Wave 1: very relaxed start (2.5s)
+            2: 1700,  // Wave 2: +200ms base
+            3: 1400,  // Wave 3: +200ms base
             4: 1000,  // Waves 4+: fast start (1.0s)
         };
         
         // Floor intervals (fastest each wave type can get)
         const waveFloorIntervals = {
-            1: 1000,  // Wave 1 floor: 1.0s (never frantic)
+            1: 1200,  // Wave 1 floor: 1.2s (never frantic)
             2: 700,   // Wave 2 floor: 0.7s
             3: 500,   // Wave 3 floor: 0.5s
             4: 400,   // Waves 4+ floor: 0.4s
@@ -405,7 +473,12 @@ function handleWaveActive() {
     }
     
     // Budget-based spawning (convert ms interval to frames: 60fps = 16.67ms/frame)
-    const spawnIntervalFrames = Math.floor(spawnInterval / 16.67);
+    const spawnIntervalFramesBase = Math.floor(spawnInterval / 16.67);
+    const spawnRateMultRaw = Number(TUNING.spawnRateMultiplier || 1.0);
+    const difficultyRaw = Number(TUNING.difficultyMultiplier ?? 1.0);
+    const difficultyMult = Math.max(0.5, Math.min(2.0, difficultyRaw || 1.0));
+    const spawnRateMult = Math.max(0.25, Math.min(3.0, (spawnRateMultRaw || 1.0) * difficultyMult));
+    const spawnIntervalFrames = Math.max(1, Math.floor(spawnIntervalFramesBase / spawnRateMult));
     if (gameState.waveBudgetRemaining > 0 && gameState.waveSpawnTimer >= spawnIntervalFrames) {
         // Burst spawns
         const shouldBurst = Math.random() < burstChance;
@@ -509,7 +582,7 @@ function handleWaveClear() {
     }
     gameState.waveTimer++;
     
-    if (gameState.waveTimer > WAVE_CLEAR_FRAMES) {
+    if (gameState.waveTimer > getWaveClearFrames()) {
         // Check for Arena 1 boss chase - boss returns after segment waves
         if (shouldBossReturn()) {
             // Prepare next boss phase
@@ -536,6 +609,14 @@ function handleWaveClear() {
         // The chase mode has more waves than base arena config
         const inChaseMode = gameState.arena1ChaseState?.enabled;
         const chaseComplete = inChaseMode && gameState.arena1ChaseState.bossEncounterCount >= 3;
+
+        // Debug feature toggle: Boss Rush (jump to boss after first wave clear)
+        if (TUNING.bossRushEnabled && !inChaseMode && gameState.currentWave === 1) {
+            gameState.waveState = WAVE_STATE.BOSS_INTRO;
+            gameState.waveTimer = 0;
+            updateUI();
+            return;
+        }
         
         if (gameState.currentWave >= maxWaves && (!inChaseMode || chaseComplete)) {
             gameState.waveState = WAVE_STATE.BOSS_INTRO;
@@ -926,6 +1007,15 @@ function completeRetreat(boss) {
         gameState.arena1ChaseState.segment++;
         gameState.arena1ChaseState.bossEncounterCount++;
         
+        // Tutorial callouts to explain the chase structure (shown once each)
+        if (gameState.currentArena === 1) {
+            if (gameState.arena1ChaseState.bossEncounterCount === 1) {
+                showTutorialCallout('boss-retreat-1', "The King retreats... he'll return stronger!", 2600);
+            } else if (gameState.arena1ChaseState.bossEncounterCount === 2) {
+                showTutorialCallout('boss-retreat-2', 'One more time... prepare for his final form!', 2600);
+            }
+        }
+        
         log('BOSS', 'retreat_complete', {
             segment: gameState.arena1ChaseState.segment,
             encounters: gameState.arena1ChaseState.bossEncounterCount,
@@ -939,8 +1029,8 @@ function completeRetreat(boss) {
     // Freeze remaining enemies briefly
     freezeAllEnemies(60);  // 1 second freeze
     
-    // Hide boss health bar
-    hideBossHealthBar();
+    // Keep boss bar visible (dimmed + persistent HP) so players understand it will return
+    updateBossHealthBar();
     
     // Reset boss active flag
     gameState.bossActive = false;
@@ -949,6 +1039,7 @@ function completeRetreat(boss) {
     gameState.currentWave++;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
     gameState.waveTimer = 0;
+    updateUI();
     
     log('STATE', 'boss_return_to_waves', { nextWave: gameState.currentWave });
 }

@@ -2,6 +2,11 @@
 
 This document provides guidance for AI agents and developers working on the MantaSphere codebase.
 
+## AI Agent Persona Entry Point
+
+- `AGENTS.md` is the entry point for persona-based behavior.
+- If the correct persona is unclear, **start with Director (Orchestrator)** and triage from there.
+
 ## Game Identity
 
 MantaSphere is an **arcade-style score runner** built on these pillars:
@@ -17,7 +22,34 @@ MantaSphere is an **arcade-style score runner** built on these pillars:
 Built with:
 - **Three.js r134** (loaded via CDN, NOT npm)
 - **Vanilla JavaScript** with ES Modules
-- **No build system** - runs directly in browser
+- **esbuild bundling** - bundles to `dist/bundle.js` for fast dev/prod builds
+
+## Clarifying Questions Protocol
+
+To avoid wrong implementations and wasted work, use **risk-based clarifying questions** when a request has ambiguity, branching choices, unclear success criteria, or high blast-radius.
+
+### When to ask questions (how many)
+
+| Situation | Ask |
+|----------|-----|
+| Fully specified, low-risk, no meaningful implementation choices | 0 questions (proceed) |
+| Simple / low ambiguity (small change, single obvious location) | 1–2 questions |
+| Moderate ambiguity (multiple valid implementations, tradeoffs, unclear constraints) | 2–3 questions |
+| Complex / confusing / high-risk (cross-system, unclear goals, wide scope, unclear repro/acceptance) | 4–10 questions |
+
+### Question quality rules
+
+- Ask only questions whose answers can **change the plan or code**.
+- Prefer **fewer, higher-leverage** questions over many small ones.
+- Keep questions **short and concrete**; offer **options** (a/b/c) when helpful.
+- If information is missing but a reasonable default exists, propose it explicitly and ask for confirmation.
+- Bundle clarifying questions into **one message** (don’t drip-feed).
+
+### Examples (quick rubric)
+
+- **“Fix this one error in `js/systems/waveSystem.js`” + exact stack trace provided**: 0–2 questions (only if multiple plausible fixes).
+- **“Add a new enemy” without desired role/spawn arena/behavior**: 2–3 questions.
+- **“Rebalance Arena 3 difficulty” without target difficulty, metrics, or pain point**: 4–10 questions.
 
 ## Critical Rules
 
@@ -394,12 +426,10 @@ The game includes an **in-game feedback collection system** for playtesting.
 - **Daily Sync**: GitHub Action reads sheet, posts summary comment to version thread
 
 #### Configuration
-Feedback requires `js/config/debug.local.js` with:
-```javascript
-export const PLAYTEST_CONFIG = {
-    url: 'https://script.google.com/...',
-    token: 'your-secret-token'
-};
+Feedback requires `.env` (gitignored) with:
+```env
+PLAYTEST_URL=https://script.google.com/...
+PLAYTEST_TOKEN=your-secret-token
 ```
 
 #### Key Files
@@ -408,17 +438,16 @@ export const PLAYTEST_CONFIG = {
 | `js/systems/playtestFeedback.js` | Form UI and submission logic |
 | `scripts/feedback-sync.js` | GitHub Action sync script |
 | `.github/workflows/feedback-sync.yml` | Daily sync workflow |
-| `docs/playtests/*.md` | Auto-generated feedback summaries |
 
 #### GitHub Thread Model
 - **One issue per major.minor version** (e.g., `[Playtest] Feedback Thread - v0.2.x`)
 - **Daily comments** with aggregated stats (only if new feedback)
-- **Raw data** committed to `docs/playtests/YYYY-MM-DD.md`
+- **Raw data** stored in Google Sheets (original source of truth)
 
 ### 14. Don'ts (IMPORTANT)
 
 - **DON'T** add npm dependencies
-- **DON'T** add a build system
+- **DON'T** add additional build systems or bundlers (keep it minimal; use existing esbuild setup)
 - **DON'T** use TypeScript
 - **DON'T** create circular imports
 - **DON'T** make early arenas too long
@@ -455,7 +484,30 @@ git commit -m "feat: description"
 git push
 ```
 
-### 16. Bug Prevention Checklist
+### 16. Commit Authorship
+
+**All commits MUST be authored by `finalFlick`.**
+
+**Required git config:**
+```bash
+git config user.name "finalFlick"
+git config user.email "finalFlick@users.noreply.github.com"
+```
+
+**Before ANY commit, the agent MUST:**
+1. Run `git config user.name` and `git config user.email`
+2. If either is NOT `finalFlick` / `finalFlick@users.noreply.github.com`:
+   - Run: `git config user.name "finalFlick"`
+   - Run: `git config user.email "finalFlick@users.noreply.github.com"`
+3. Only then proceed with the commit
+
+**This check is MANDATORY** - do not skip it, do not assume it's correct.
+
+**Exception:** If the user explicitly requests a commit as a different identity, confirm with them first ("You want me to commit as X - is that correct?"), then proceed if confirmed.
+
+**manta-warden** handles GitHub issues/comments only (not commits).
+
+### 17. Bug Prevention Checklist
 
 These rules prevent common issues discovered during code reviews.
 
@@ -651,13 +703,10 @@ marker.innerCircle.material.opacity = 0.5;
 - **Never modify `gameState.health` directly** (except in `takeDamage`)
 
 #### Debug Logging
-- **Gate all console.log behind DEBUG flag:**
-```javascript
-import { DEBUG } from '../config/constants.js';
-if (DEBUG) console.log('[System] Message');
-```
-- **Keep console.warn for actual error conditions** - These should always log
-- **Rate-limit warnings that could spam** - Use a "warned" flag
+- **Use the logging framework** - See Section 17 (Observability & Debug Logging)
+- **DO NOT use raw console.log** - Always use `log()`, `logOnce()`, `logThrottled()` from `debugLog.js`
+- **Keep console.warn/error for actual errors** - Storage failures, missing features, etc.
+- **Rate-limit warnings that could spam** - Use `logThrottled()` or a "warned" flag
 - **Warnings in update loops should fire once, not every frame**
 ```javascript
 // BAD - spams console every frame
@@ -755,7 +804,7 @@ function restartGame() {
 - **Use crossorigin="anonymous"** for CDN resources
 - **Document how to regenerate hashes** if library is updated
 
-### 17. Observability & Debug Logging
+### 18. Observability & Debug Logging
 
 The game uses **loglevel** (CDN) with a thin wrapper (`js/systems/debugLog.js`) for structured debug logging.
 
@@ -774,6 +823,9 @@ The game uses **loglevel** (CDN) with a thin wrapper (`js/systems/debugLog.js`) 
 | STATE | State machine transitions |
 | SAFETY | Caps, pauses, invariant violations |
 | PERF | Performance metrics (disabled by default) |
+| DEBUG | Debug menu operations, cheats |
+| MUSIC | PulseMusic system events |
+| PLAYTEST | Playtest feedback system |
 
 #### Logger API
 
@@ -846,7 +898,7 @@ log('SPAWN', 'enemy_spawned', { type: 'grunt', pos: { x, z } });
 2. Check state machine transitions (should see `wave_clear`)
 3. Look for `[SAFETY]` warnings
 
-### 18. Version Management (Semantic Versioning)
+### 19. Version Management (Semantic Versioning)
 
 The project follows **Semantic Versioning 2.0.0** (MAJOR.MINOR.PATCH) tracked in the `VERSION` file.
 
@@ -965,7 +1017,7 @@ git push origin vX.Y.Z
 
 See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 
-### 19. Source of Truth Policy
+### 20. Source of Truth Policy
 
 **Work Items (tasks, bugs, features):**
 - GitHub Issues = ONLY source of truth
@@ -987,6 +1039,7 @@ See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 - NO BACKLOG.md, FEATURES.md, PROJECT_STATE.md, or EPICS.md files
 - NO duplicate task tracking across files and GitHub
 - NO creating new state-tracking files
+- NO committing generated audit artifacts (e.g. `PRE_COMMIT_AUDIT.md`) — keep audits in chat, PR descriptions, or GitHub comments instead
 
 **File Purposes:**
 | File | Purpose | NOT For |
@@ -996,3 +1049,155 @@ See [CHANGELOG.md](CHANGELOG.md) for complete version history.
 | docs/*.md | System documentation | Task tracking |
 | `todo.txt` | Scratch capture | Permanent storage |
 | `CONTRIBUTING.md` | Process docs | State tracking |
+
+### 20. GitHub Issue Creation Process
+
+When creating or commenting on GitHub Issues, AI agents must include persona-based analysis (not just the user request).
+
+#### Required Structure for Issues/Comments
+
+Every issue or comment created by the AI must include:
+
+1. **User Request/Feedback** - What was reported or requested (quote if from playtest)
+2. **AI Analysis** - Insights from the appropriate persona:
+   - Use **Game Director** for cross-system, pillar alignment, scope decisions
+   - Use **specialist persona** if issue is clearly in their domain (Boss Designer, Enemy Designer, etc.)
+   - If no persona specified, provide general AI analysis
+3. **Pillar Alignment** - Which game pillars this supports/threatens
+4. **Recommendation** - Priority, scope, and implementation guidance
+
+#### Issue Comment Format
+
+When commenting on existing issues with playtest evidence:
+
+```
+**Playtest Evidence (YYYY-MM-DD)**
+
+> [Quote from feedback]
+
+**Director Analysis:**
+[Persona-based reasoning about why this matters, pillar alignment, risks]
+
+**Suggested Action:**
+[Specific tuning or implementation guidance]
+
+----
+```
+
+#### New Issue Format
+
+```
+## Problem
+[Clear problem statement]
+
+## Evidence
+[Quotes, data, reproduction steps]
+
+## Director Analysis
+[Pillar alignment, why this matters for the game's identity, scope concerns]
+
+## Proposed Solutions
+[Options with tradeoffs]
+
+## Acceptance Criteria
+[Measurable outcomes]
+```
+
+#### Persona Selection
+
+| Issue Type | Persona | Focus |
+|------------|---------|-------|
+| Cross-system, scope, pillars | Game Director | Identity, priorities |
+| Boss mechanics | Boss Designer | Fairness, readability, phases |
+| Enemy behavior/waves | Enemy Designer | Roles, composition, spawns |
+| Arena layout | Arena Designer | Routing, geometry, hazards |
+| Audio/music | Audio Designer | Pulse system, feedback |
+| Balance/tuning | Game Director | Pillar tradeoffs |
+| UX/readability | Playtest Evaluator | Evidence-based decisions |
+
+### 21. Owner Authority Protocol (GitHub Issues)
+
+**Project owner authority:** On GitHub Issues, `finalflick` is the final authority. If `finalflick` provides direction, it supersedes all prior discussion, analysis, plans, labels, and AI recommendations on that issue.
+
+#### 21.1 What triggers this protocol
+
+Treat any of the following as an **Owner Override Event** on a GitHub Issue:
+- `finalflick` posts a comment (new direction, correction, constraint, scope change)
+- `finalflick` edits the issue title/body
+- `finalflick` changes labels, milestones, assignees, or issue state (open/close/reopen/lock)
+
+If the override is a **comment**, the information in that comment is the source of truth for that issue. If the override is a **non-comment action**, assume intent changed and require clarification before proceeding.
+
+#### 21.2 Stop-the-line rule (no further GitHub actions)
+
+After an Owner Override Event is detected on an issue:
+- **All agents must immediately pause** any further actions related to that issue on GitHub.
+- **No further GitHub mutations are allowed** on that issue until `manta-warden` posts an acknowledgment comment on that issue.
+
+Examples of blocked actions until acknowledgment:
+- commenting (except the required `manta-warden` acknowledgment)
+- changing labels/milestones/assignees/projects/status fields
+- editing issue title/body
+- linking/closing via PR descriptions, automations, or follow-up issue churn
+
+#### 21.3 Required `manta-warden` acknowledgment (before any further work proceeds)
+
+`manta-warden` must respond on the issue to:
+- **acknowledge** the Owner Override Event
+- **rectify**: restate the updated scope/priority/constraints in plain language
+- **clarify**: ask targeted questions if anything is ambiguous
+- **gate**: explicitly state what will happen next, and what is blocked pending answers
+
+Use this exact structure:
+
+```
+**Owner Override Acknowledged (finalflick)**
+
+**Observed:** [link/quote of finalflick comment or describe the owner action]
+
+**Updated interpretation (supersedes prior thread):**
+- Scope: [...]
+- Priority/sequence: [...]
+- Constraints/definition of done: [...]
+
+**Clarifying questions (if needed):**
+1. ...
+2. ...
+
+**Next action (after confirmation):**
+- ...
+```
+
+#### 21.4 Agent behavior requirements
+
+- **All agents**: Treat the most recent `finalflick` direction as canonical for that issue, even if it conflicts with docs, prior comments, or earlier agent analysis.
+- **Non-warden agents**: Do not "continue anyway" in the thread. If you are not `manta-warden`, your next step is to request/route for a `manta-warden` acknowledgment comment.
+- **Conflict handling**: If `finalflick` direction conflicts with system constraints or safety rules, `manta-warden` must call it out and propose the smallest viable alternative while asking for confirmation.
+
+### 22. GitHub Bot Identity Requirement
+
+**AI agents MUST use the manta-warden bot identity for ALL GitHub operations.**
+
+`finalFlick` is the project owner's personal account. Agents must NEVER create issues or post comments as `finalFlick`. If the owner wants to comment as themselves, they will do so manually.
+
+#### Before ANY `gh issue`, `gh pr`, or `gh api` command:
+
+1. **Obtain the bot token first:**
+   ```powershell
+   $token = (node scripts/gh-app-auth.js --repo finalFlick/mantasphere --raw).Trim()
+   $env:GH_TOKEN = $token
+   ```
+
+2. **Then run the gh command** - it will appear as `manta-warden [bot]`
+
+#### If bot token cannot be obtained:
+
+- **DO NOT fall back to personal auth**
+- **DO NOT run the gh command**
+- **Inform the user** that the operation requires bot credentials and ask them to verify `.secrets/github-app.json` exists and is configured correctly
+
+#### Never:
+
+- Run `gh` commands without explicitly setting `GH_TOKEN` to the bot token first
+- Assume the default `gh` auth is acceptable for this project
+- Post comments, create issues, or modify labels as `finalFlick`

@@ -4,3 +4,7 @@ services:
     build: .
     ports:
       - "8080:80"
+    environment:
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - PLAYTEST_URL=${PLAYTEST_URL:-}
+      - PLAYTEST_TOKEN=${PLAYTEST_TOKEN:-}

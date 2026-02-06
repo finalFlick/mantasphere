@@ -6,7 +6,7 @@
 import { ARENA_CONFIG } from '../config/arenas.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
 import { BOSS_CONFIG } from '../config/bosses.js';
-import { DEBUG } from '../config/constants.js';
+import { log } from './debugLog.js';
 
 export const PulseMusic = {
     // Audio context and nodes
@@ -120,7 +120,7 @@ export const PulseMusic = {
             this.generateAllProfiles();
             
             this.initialized = true;
-            if (DEBUG) console.log('[PulseMusic] Initialized with', Object.keys(this.arenaProfiles).length, 'arena profiles');
+            log('MUSIC', 'initialized', { arenaProfiles: Object.keys(this.arenaProfiles).length });
         } catch (e) {
             console.warn('[PulseMusic] Web Audio not available:', e);
             this.enabled = false;
@@ -308,7 +308,7 @@ export const PulseMusic = {
         this.targetIntensity = 0;
         this.bossPhase = 0;
         
-        if (DEBUG) console.log('[PulseMusic] Loaded arena', arenaId, '-', profile.name, '- Key:', profile.rootNote, profile.scale, '- BPM:', this.bpm);
+        log('MUSIC', 'arena_loaded', { arenaId, name: profile.name, key: profile.rootNote, scale: profile.scale, bpm: this.bpm });
     },
     
     // ============================================================================
@@ -321,7 +321,7 @@ export const PulseMusic = {
         this.stopMusicLoop();
         this.nextBarTime = this.ctx.currentTime + 0.1;
         this.musicLoopId = setInterval(() => this.musicTick(), 50);
-        if (DEBUG) console.log('[PulseMusic] Music loop started');
+        log('MUSIC', 'loop_started', {});
     },
     
     stopMusicLoop() {
@@ -1221,6 +1221,33 @@ export const PulseMusic = {
     
     onLevelUp() {
         this.playLevelUpStinger();
+    },
+
+    onXpPickup() {
+        if (!this._checkReady()) return;
+
+        // Quick chime pitched to arena key
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // Random scale degree for variety
+        const rootMidi = this.currentProfile.rootMidi;
+        const scale = this.currentProfile.scaleIntervals;
+        const degree = scale[Math.floor(Math.random() * scale.length)];
+
+        osc.frequency.setValueAtTime(this.midiToFreq(rootMidi + degree + 12), now);
+        osc.type = 'sine';
+
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        osc.connect(gain);
+        gain.connect(this.sfxBus);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        osc.endTime = now + 0.15;
+        this.activeOscillators.push(osc);
     },
     
     onGameOver() {
@@ -2142,7 +2169,7 @@ export const PulseMusic = {
             }
         }, 50);
         
-        if (DEBUG) console.log('[PulseMusic] Menu music started');
+        log('MUSIC', 'menu_started', {});
     },
     
     stopMenuMusic() {
@@ -2158,7 +2185,7 @@ export const PulseMusic = {
         });
         this.activeOscillators = [];
         
-        if (DEBUG) console.log('[PulseMusic] Menu music stopped');
+        log('MUSIC', 'menu_stopped', {});
     },
     
     scheduleMenuBar(barTime, rootMidi, scale) {

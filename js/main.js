@@ -3,7 +3,7 @@ import { gameState, resetGameState } from './core/gameState.js';
 import { initScene, createGround, onWindowResize, render, scene, renderer, camera } from './core/scene.js';
 import { initInput, resetInput, checkCutsceneSkip, cleanupInput } from './core/input.js';
 import { resetAllEntities, enemies, getCurrentBoss } from './core/entities.js';
-import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG, GAME_TITLE, VERSION, enableDebugMode } from './config/constants.js';
+import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, enableDebugMode, PLAYTEST_CONFIG } from './config/constants.js';
 
 import { createPlayer, updatePlayer, resetPlayer, player } from './entities/player.js';
 import { updateEnemies, clearEnemyGeometryCache } from './entities/enemies.js';
@@ -21,6 +21,7 @@ import { initLeaderboard } from './systems/leaderboard.js';
 import { PulseMusic } from './systems/pulseMusic.js';
 import { initLogger, setGameStateRef, resetLogState, log } from './systems/debugLog.js';
 import { gpuInfo } from './systems/gpuDetect.js';
+import { TUNING } from './config/tuning.js';
 
 import { generateArena, updateHazardZones } from './arena/generator.js';
 
@@ -116,6 +117,12 @@ function cleanupGameState() {
     lastFrameTime = 0;
 }
 
+// Helper: Apply starting lives from tuning config (called at run start)
+function applyStartingLives() {
+    const livesRaw = Number(TUNING.playerStartingLives ?? 1);
+    gameState.lives = Math.max(1, Math.min(9, Math.round(livesRaw || 1)));
+}
+
 // Helper: Unlock all mechanics up to and including the specified arena
 function unlockMechanicsForArena(arenaNumber) {
     if (arenaNumber >= 2) {
@@ -146,20 +153,17 @@ async function init() {
     }
     window.__mantaSphereInitialized = true;
     
-    // Try to enable secure debug mode and playtest feedback (requires localhost + debug.local.js)
-    import('/js/config/debug.local.js')
-        .then(({ DEBUG_SECRET, PLAYTEST_CONFIG }) => {
-            if (DEBUG_SECRET === true) {
-                enableDebugMode();
-                console.log('%c[DEBUG MODE]', 'color: #ffdd44; font-weight: bold', 'Enabled (debug.local.js loaded)');
-            }
-            if (PLAYTEST_CONFIG && PLAYTEST_CONFIG.url && PLAYTEST_CONFIG.token) {
-                initPlaytestFeedback(PLAYTEST_CONFIG);
-            }
-        })
-        .catch(() => {});
+    // Enable debug mode and playtest feedback based on build-time config
+    // Dev build (npm run dev): DEBUG_SECRET=true, enables debug logging
+    // Prod build (npm run build): DEBUG_SECRET=false, debug disabled
+    if (enableDebugMode()) {
+        setupDebugUI();
+    }
+    if (PLAYTEST_CONFIG && PLAYTEST_CONFIG.url && PLAYTEST_CONFIG.token) {
+        initPlaytestFeedback(PLAYTEST_CONFIG);
+    }
     
-    // Initialize debug logger
+    // Initialize debug logger (AFTER debug mode check completes)
     setGameStateRef(gameState);
     initLogger();
     log('STATE', 'init', { version: VERSION });
@@ -325,7 +329,7 @@ async function init() {
     addTrackedListener(window, 'keydown', (e) => {
         if (e.key === 'm' || e.key === 'M') {
             const enabled = PulseMusic.toggle();
-            if (DEBUG) console.log(`[${GAME_TITLE.toUpperCase()}] Music:`, enabled ? 'ON' : 'OFF');
+            log('DEBUG', 'music_toggled', { enabled });
         }
     });
     
@@ -400,6 +404,59 @@ async function init() {
             showFeedbackOverlay('pause');
         });
     }
+
+    // Pause menu audio sliders (stopPropagation so tweaking sliders doesn't resume via pointer lock click handler)
+    const masterVolumeSlider = document.getElementById('master-volume');
+    const musicVolumeSlider = document.getElementById('music-volume');
+    const sfxVolumeSlider = document.getElementById('sfx-volume');
+
+    const masterVolumeValue = document.getElementById('master-volume-value');
+    const musicVolumeValue = document.getElementById('music-volume-value');
+    const sfxVolumeValue = document.getElementById('sfx-volume-value');
+
+    function stopResumeClick(e) {
+        e.stopPropagation();
+    }
+
+    if (masterVolumeSlider) {
+        addTrackedListener(masterVolumeSlider, 'mousedown', stopResumeClick);
+        addTrackedListener(masterVolumeSlider, 'click', stopResumeClick);
+        addTrackedListener(masterVolumeSlider, 'input', (e) => {
+            stopResumeClick(e);
+            const value = parseInt(e.target.value, 10);
+            const vol = (Number.isFinite(value) ? value : 70) / 100;
+            PulseMusic.setMasterVolume(vol);
+            if (masterVolumeValue) masterVolumeValue.textContent = `${value}%`;
+        });
+    }
+
+    if (musicVolumeSlider) {
+        addTrackedListener(musicVolumeSlider, 'mousedown', stopResumeClick);
+        addTrackedListener(musicVolumeSlider, 'click', stopResumeClick);
+        addTrackedListener(musicVolumeSlider, 'input', (e) => {
+            stopResumeClick(e);
+            const value = parseInt(e.target.value, 10);
+            const vol = (Number.isFinite(value) ? value : 50) / 100;
+            if (PulseMusic.musicBus && PulseMusic.ctx) {
+                PulseMusic.musicBus.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), PulseMusic.ctx.currentTime);
+            }
+            if (musicVolumeValue) musicVolumeValue.textContent = `${value}%`;
+        });
+    }
+
+    if (sfxVolumeSlider) {
+        addTrackedListener(sfxVolumeSlider, 'mousedown', stopResumeClick);
+        addTrackedListener(sfxVolumeSlider, 'click', stopResumeClick);
+        addTrackedListener(sfxVolumeSlider, 'input', (e) => {
+            stopResumeClick(e);
+            const value = parseInt(e.target.value, 10);
+            const vol = (Number.isFinite(value) ? value : 70) / 100;
+            if (PulseMusic.sfxBus && PulseMusic.ctx) {
+                PulseMusic.sfxBus.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), PulseMusic.ctx.currentTime);
+            }
+            if (sfxVolumeValue) sfxVolumeValue.textContent = `${value}%`;
+        });
+    }
     
     // Main menu feedback button
     const menuFeedbackBtn = document.getElementById('menu-feedback-btn');
@@ -438,17 +495,7 @@ async function init() {
         });
     }
     
-    // Pause menu debug button - only visible when DEBUG is enabled
-    const pauseDebugBtn = document.getElementById('pause-debug-btn');
-    if (pauseDebugBtn) {
-        if (DEBUG) {
-            pauseDebugBtn.style.display = 'inline-block';
-            addTrackedListener(pauseDebugBtn, 'click', (e) => {
-                e.stopPropagation(); // Prevent resume trigger
-                showDebugMenu();
-            });
-        }
-    }
+    // Pause menu debug button - handled by setupDebugUI() after debug mode is enabled
     
     // Arena select button
     const arenaSelectBtn = document.getElementById('arena-select-btn');
@@ -471,28 +518,14 @@ async function init() {
         }
     });
     
-    // Debug menu button - only visible when DEBUG is enabled
-    const debugBtn = document.getElementById('debug-btn');
-    if (debugBtn) {
-        if (DEBUG) {
-            addTrackedListener(debugBtn, 'click', () => {
-                showDebugMenu();
-            });
-        } else {
-            // Hide debug button in production
-            debugBtn.style.display = 'none';
-        }
-    }
+    // Debug menu button - setupDebugUI() shows it when debug mode is enabled
+    // Button is hidden by default in CSS/HTML, no need to hide it here
+    // (Previously this code was hiding the button AFTER setupDebugUI showed it, causing a race condition)
     
-    // Close debug menu button
+    // Close debug menu button (always set up, menu just won't be accessible without debug mode)
     const closeDebugBtn = document.getElementById('close-debug');
     if (closeDebugBtn) {
         addTrackedListener(closeDebugBtn, 'click', hideDebugMenu);
-    }
-    
-    // Debug controls - only set up when DEBUG is enabled
-    if (DEBUG) {
-        setupDebugControls();
     }
     
     // Start menu music on first user interaction (browser autoplay policy requires this)
@@ -517,6 +550,8 @@ async function init() {
 }
 
 function startGame() {
+    applyStartingLives();
+
     hideStartScreen();
     resetActiveBadges();
     generateArena(1);
@@ -548,6 +583,7 @@ function restartGame() {
     cleanupGameState();
     generateArena(1);
     spawnArena1ModulePickup();  // Spawn hidden Speed Module pickup
+    applyStartingLives();
     
     hideGameOver();
     hidePauseIndicator();
@@ -631,6 +667,7 @@ function startAtArena(arenaNumber) {
     if (arenaNumber === 1) {
         spawnArena1ModulePickup();
     }
+    applyStartingLives();
     
     gameState.running = true;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
@@ -668,6 +705,25 @@ function gameOver() {
     } else {
         showGameOver();
     }
+}
+
+function tryConsumeLifeAndRespawn() {
+    if (!gameState.running) return false;
+
+    // Only active when starting lives > 1 (default is 1, preserving current behavior)
+    if (!gameState.lives || gameState.lives <= 1) return false;
+
+    gameState.lives = Math.max(0, gameState.lives - 1);
+
+    // Restore health and reset damage state
+    gameState.health = gameState.maxHealth;
+    resetDamageTime();
+
+    // Respawn by rewinding to current arena/wave (safe: rebuilds arena + clears entities)
+    debugWarpToArenaWave(gameState.currentArena, gameState.currentWave);
+
+    log('STATE', 'life_consumed_respawn', { livesRemaining: gameState.lives });
+    return true;
 }
 
 function animate(currentTime) {
@@ -782,6 +838,9 @@ function animate(currentTime) {
             
             // Check game over
             if (gameState.health <= 0) {
+                if (tryConsumeLifeAndRespawn()) {
+                    return;
+                }
                 gameOver();
                 return;
             }
@@ -820,6 +879,32 @@ function animate(currentTime) {
 }
 
 // Debug menu functions
+
+// Called when debug mode is enabled (dev builds only)
+function setupDebugUI() {
+    // Show debug button
+    const debugBtn = document.getElementById('debug-btn');
+    if (debugBtn) {
+        debugBtn.style.display = 'inline-block';
+        addTrackedListener(debugBtn, 'click', () => {
+            showDebugMenu();
+        });
+    }
+    
+    // Show pause menu debug button
+    const pauseDebugBtn = document.getElementById('pause-debug-btn');
+    if (pauseDebugBtn) {
+        pauseDebugBtn.style.display = 'inline-block';
+        addTrackedListener(pauseDebugBtn, 'click', (e) => {
+            e.stopPropagation();
+            showDebugMenu();
+        });
+    }
+    
+    // Set up debug controls
+    setupDebugControls();
+}
+
 function setupDebugControls() {
     // Populate GPU info in debug menu
     const gpuInfoEl = document.getElementById('debug-gpu-info');
@@ -925,6 +1010,264 @@ function setupDebugControls() {
             }
         });
     }
+
+    // ==================== TUNING SLIDERS ====================
+    function clamp(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    function bindSlider(sliderId, valueId, { getValue, setValue, min, max, format }) {
+        const slider = document.getElementById(sliderId);
+        const valueEl = document.getElementById(valueId);
+        if (!slider) return;
+
+        const write = () => {
+            const v = getValue();
+            slider.value = String(v);
+            if (valueEl) valueEl.textContent = format(v);
+        };
+
+        // Init
+        write();
+
+        // Live update
+        slider.addEventListener('input', () => {
+            const raw = Number(slider.value);
+            const v = clamp(raw, min, max);
+            setValue(v);
+            if (valueEl) valueEl.textContent = format(v);
+            log('DEBUG', 'tuning_changed', { key: sliderId, value: v });
+        });
+
+        return write;
+    }
+
+    const writeSpawnRate = bindSlider('debug-tuning-spawn-rate', 'debug-tuning-spawn-rate-value', {
+        getValue: () => Number(TUNING.spawnRateMultiplier || 1.0).toFixed(2),
+        setValue: (v) => (TUNING.spawnRateMultiplier = v),
+        min: 0.25,
+        max: 3.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeEnemySpeed = bindSlider('debug-tuning-enemy-speed', 'debug-tuning-enemy-speed-value', {
+        getValue: () => Number(TUNING.enemySpeedMultiplier || 1.0).toFixed(2),
+        setValue: (v) => (TUNING.enemySpeedMultiplier = v),
+        min: 0.25,
+        max: 3.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeGravity = bindSlider('debug-tuning-gravity', 'debug-tuning-gravity-value', {
+        getValue: () => Number(TUNING.gravityMultiplier || 1.0).toFixed(2),
+        setValue: (v) => (TUNING.gravityMultiplier = v),
+        min: 0.25,
+        max: 3.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeXpDespawn = bindSlider('debug-tuning-xp-despawn', 'debug-tuning-xp-despawn-value', {
+        getValue: () => Math.round(Number(TUNING.xpDespawnSeconds || 15)),
+        setValue: (v) => (TUNING.xpDespawnSeconds = Math.round(v)),
+        min: 1,
+        max: 120,
+        format: (v) => `${Math.round(v)}s`
+    });
+
+    const writeBreathingRoom = bindSlider('debug-tuning-breathing-room', 'debug-tuning-breathing-room-value', {
+        getValue: () => Number(TUNING.breathingRoomSeconds ?? 1.5).toFixed(2),
+        setValue: (v) => (TUNING.breathingRoomSeconds = Number(v)),
+        min: 0,
+        max: 10,
+        format: (v) => `${Number(v).toFixed(2)}s`
+    });
+
+    const writeStressThreshold = bindSlider('debug-tuning-stress-threshold', 'debug-tuning-stress-threshold-value', {
+        getValue: () => Math.round(Number(TUNING.stressPauseThreshold ?? 6)),
+        setValue: (v) => (TUNING.stressPauseThreshold = Math.round(v)),
+        min: 3,
+        max: 12,
+        format: (v) => `${Math.round(v)}`
+    });
+
+    const writeLandingStun = bindSlider('debug-tuning-landing-stun', 'debug-tuning-landing-stun-value', {
+        getValue: () => Math.round(Number(TUNING.landingStunFrames ?? 0)),
+        setValue: (v) => (TUNING.landingStunFrames = Math.round(v)),
+        min: 0,
+        max: 30,
+        format: (v) => `${Math.round(v)}f`
+    });
+
+    const writeFireRateEff = bindSlider('debug-tuning-fire-rate-eff', 'debug-tuning-fire-rate-eff-value', {
+        getValue: () => Number(TUNING.fireRateEffectiveness ?? 1.0).toFixed(2),
+        setValue: (v) => (TUNING.fireRateEffectiveness = Number(v)),
+        min: 0.5,
+        max: 2.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeBossHp = bindSlider('debug-tuning-boss-hp', 'debug-tuning-boss-hp-value', {
+        getValue: () => Number(TUNING.bossHealthMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => (TUNING.bossHealthMultiplier = Number(v)),
+        min: 0.25,
+        max: 3.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeBossDmg = bindSlider('debug-tuning-boss-dmg', 'debug-tuning-boss-dmg-value', {
+        getValue: () => Number(TUNING.bossDamageMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => (TUNING.bossDamageMultiplier = Number(v)),
+        min: 0.25,
+        max: 3.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeSpawnSafeRadius = bindSlider('debug-tuning-spawn-safe-radius', 'debug-tuning-spawn-safe-radius-value', {
+        getValue: () => Math.round(Number(TUNING.spawnSafeZoneRadius ?? 0)),
+        setValue: (v) => (TUNING.spawnSafeZoneRadius = Math.round(v)),
+        min: 0,
+        max: 30,
+        format: (v) => `${Math.round(v)}u`
+    });
+
+    const writeTelegraphMult = bindSlider('debug-tuning-telegraph-mult', 'debug-tuning-telegraph-mult-value', {
+        getValue: () => Number(TUNING.telegraphDurationMult ?? 1.0).toFixed(2),
+        setValue: (v) => (TUNING.telegraphDurationMult = Number(v)),
+        min: 0.5,
+        max: 2.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    // ==================== UX LEVER TOGGLES ====================
+    function bindToggle(btnId, { getValue, setValue, labelOn, labelOff }) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return null;
+
+        const write = () => {
+            const enabled = !!getValue();
+            btn.textContent = enabled ? labelOn : labelOff;
+        };
+
+        write();
+        btn.addEventListener('click', () => {
+            const next = !getValue();
+            setValue(next);
+            write();
+            log('DEBUG', 'toggle_changed', { key: btnId, value: next });
+        });
+
+        return write;
+    }
+
+    const writeTutorialHints = bindToggle('debug-toggle-tutorial-hints', {
+        getValue: () => !!TUNING.tutorialHintsEnabled,
+        setValue: (v) => (TUNING.tutorialHintsEnabled = !!v),
+        labelOn: 'Tutorial Hints: ON',
+        labelOff: 'Tutorial Hints: OFF'
+    });
+
+    const writeSpawnWarning = bindToggle('debug-toggle-spawn-warning', {
+        getValue: () => !!TUNING.offScreenWarningEnabled,
+        setValue: (v) => (TUNING.offScreenWarningEnabled = !!v),
+        labelOn: 'Spawn Warning: ON',
+        labelOff: 'Spawn Warning: OFF'
+    });
+
+    const writeRetreatAnnounce = bindToggle('debug-toggle-retreat-announce', {
+        getValue: () => !!TUNING.retreatAnnouncementEnabled,
+        setValue: (v) => (TUNING.retreatAnnouncementEnabled = !!v),
+        labelOn: 'Retreat Banner: ON',
+        labelOff: 'Retreat Banner: OFF'
+    });
+
+    // ==================== FEATURE TOGGLES (DEBUG) ====================
+    const writeDifficulty = bindSlider('debug-tuning-difficulty', 'debug-tuning-difficulty-value', {
+        getValue: () => Number(TUNING.difficultyMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => (TUNING.difficultyMultiplier = Number(v)),
+        min: 0.5,
+        max: 2.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+
+    const writeStartingLives = bindSlider('debug-tuning-lives', 'debug-tuning-lives-value', {
+        getValue: () => Math.round(Number(TUNING.playerStartingLives ?? 1)),
+        setValue: (v) => (TUNING.playerStartingLives = Math.round(v)),
+        min: 1,
+        max: 9,
+        format: (v) => `${Math.round(v)}`
+    });
+
+    const writeEliteChance = bindSlider('debug-tuning-elite-chance', 'debug-tuning-elite-chance-value', {
+        getValue: () => Number(TUNING.eliteSpawnChance ?? 0).toFixed(2),
+        setValue: (v) => (TUNING.eliteSpawnChance = Number(v)),
+        min: 0,
+        max: 0.5,
+        format: (v) => `${Math.round(Number(v) * 100)}%`
+    });
+
+    const writeBossRush = bindToggle('debug-toggle-boss-rush', {
+        getValue: () => !!TUNING.bossRushEnabled,
+        setValue: (v) => (TUNING.bossRushEnabled = !!v),
+        labelOn: 'Boss Rush: ON',
+        labelOff: 'Boss Rush: OFF'
+    });
+
+    const writeAttackCone = bindToggle('debug-toggle-attack-cone', {
+        getValue: () => !!TUNING.attackConePreviewEnabled,
+        setValue: (v) => (TUNING.attackConePreviewEnabled = !!v),
+        labelOn: 'Attack Cone: ON',
+        labelOff: 'Attack Cone: OFF'
+    });
+
+    const resetTuningBtn = document.getElementById('debug-tuning-reset');
+    if (resetTuningBtn) {
+        resetTuningBtn.addEventListener('click', () => {
+            TUNING.spawnRateMultiplier = 1.0;
+            TUNING.enemySpeedMultiplier = 1.0;
+            TUNING.gravityMultiplier = 1.0;
+            TUNING.xpDespawnSeconds = 15;
+            TUNING.breathingRoomSeconds = 1.5;
+            TUNING.stressPauseThreshold = 6;
+            TUNING.landingStunFrames = 0;
+            TUNING.fireRateEffectiveness = 1.0;
+            TUNING.bossHealthMultiplier = 1.0;
+            TUNING.bossDamageMultiplier = 1.0;
+            TUNING.spawnSafeZoneRadius = 0;
+            TUNING.telegraphDurationMult = 1.0;
+            TUNING.tutorialHintsEnabled = false;
+            TUNING.offScreenWarningEnabled = false;
+            TUNING.retreatAnnouncementEnabled = false;
+            TUNING.playerStartingLives = 1;
+            TUNING.difficultyMultiplier = 1.0;
+            TUNING.eliteSpawnChance = 0;
+            TUNING.bossRushEnabled = false;
+            TUNING.attackConePreviewEnabled = true;
+
+            // Refresh UI from current tuning values
+            if (writeSpawnRate) writeSpawnRate();
+            if (writeEnemySpeed) writeEnemySpeed();
+            if (writeGravity) writeGravity();
+            if (writeXpDespawn) writeXpDespawn();
+            if (writeBreathingRoom) writeBreathingRoom();
+            if (writeStressThreshold) writeStressThreshold();
+            if (writeLandingStun) writeLandingStun();
+            if (writeFireRateEff) writeFireRateEff();
+            if (writeBossHp) writeBossHp();
+            if (writeBossDmg) writeBossDmg();
+            if (writeSpawnSafeRadius) writeSpawnSafeRadius();
+            if (writeTelegraphMult) writeTelegraphMult();
+            if (writeTutorialHints) writeTutorialHints();
+            if (writeSpawnWarning) writeSpawnWarning();
+            if (writeRetreatAnnounce) writeRetreatAnnounce();
+            if (writeDifficulty) writeDifficulty();
+            if (writeStartingLives) writeStartingLives();
+            if (writeEliteChance) writeEliteChance();
+            if (writeBossRush) writeBossRush();
+            if (writeAttackCone) writeAttackCone();
+
+            log('DEBUG', 'tuning_reset', { ...TUNING });
+        });
+    }
 }
 
 function startEmptyArena() {
@@ -954,12 +1297,12 @@ function startEmptyArena() {
     updateUI();
     animate();
     
-    if (DEBUG) console.log('[DEBUG] Empty arena started - no enemies will spawn');
+    log('DEBUG', 'empty_arena_started', {});
 }
 
 function debugSpawnEnemy(enemyType) {
     if (!gameState.running) {
-        if (DEBUG) console.log('[DEBUG] Cannot spawn enemy - game not running');
+        log('DEBUG', 'spawn_failed', { reason: 'game_not_running' });
         return;
     }
     
@@ -970,12 +1313,12 @@ function debugSpawnEnemy(enemyType) {
     const z = player.position.z + Math.sin(angle) * distance;
     
     spawnSpecificEnemy(enemyType, x, 1, z);
-    if (DEBUG) console.log(`[DEBUG] Spawned ${enemyType} at (${x.toFixed(1)}, 1, ${z.toFixed(1)})`);
+    log('DEBUG', 'enemy_spawned', { type: enemyType, x: x.toFixed(1), z: z.toFixed(1) });
 }
 
 function debugWarpToArenaWave(arena, wave) {
     if (!gameState.running) {
-        if (DEBUG) console.log('[DEBUG] Cannot warp - game not running');
+        log('DEBUG', 'warp_failed', { reason: 'game_not_running' });
         return;
     }
     
@@ -1005,7 +1348,7 @@ function debugWarpToArenaWave(arena, wave) {
     PulseMusic.onArenaChange(arena);
     
     updateUI();
-    if (DEBUG) console.log(`[DEBUG] Warped to Arena ${arena}, Wave ${wave}`);
+    log('DEBUG', 'warp_to', { arena, wave });
 }
 
 function startBossBattle(bossNum) {
@@ -1061,7 +1404,7 @@ function startBossBattle(bossNum) {
     updateUI();
     animate();
     
-    if (DEBUG) console.log(`[DEBUG] Starting Boss ${bossNum} Battle`);
+    log('DEBUG', 'boss_started', { bossNum });
 }
 
 // Legacy alias for compatibility
@@ -1071,7 +1414,7 @@ function debugSpawnBoss(bossNum) {
 
 function debugGiveLevels(count) {
     if (!gameState.running) {
-        if (DEBUG) console.log('[DEBUG] Cannot give levels - game not running');
+        log('DEBUG', 'give_levels_failed', { reason: 'game_not_running' });
         return;
     }
     
@@ -1105,7 +1448,7 @@ function debugGiveLevels(count) {
     }
     
     updateUI();
-    if (DEBUG) console.log(`[DEBUG] Gave ${count} levels - now level ${gameState.level}`);
+    log('DEBUG', 'levels_given', { count, newLevel: gameState.level });
 }
 
 function debugToggleInvincibility() {
@@ -1119,18 +1462,18 @@ function debugToggleInvincibility() {
             'linear-gradient(135deg, #444, #555)';
     }
     
-    if (DEBUG) console.log(`[DEBUG] Invincibility: ${gameState.debug.invincible ? 'ON' : 'OFF'}`);
+    log('DEBUG', 'invincibility_toggled', { enabled: gameState.debug.invincible });
 }
 
 function debugFullHeal() {
     if (!gameState.running) {
-        if (DEBUG) console.log('[DEBUG] Cannot heal - game not running');
+        log('DEBUG', 'heal_failed', { reason: 'game_not_running' });
         return;
     }
     
     gameState.health = gameState.maxHealth;
     updateUI();
-    if (DEBUG) console.log('[DEBUG] Full heal applied');
+    log('DEBUG', 'full_heal', {});
 }
 
 function debugUnlockAllMechanics() {
@@ -1143,7 +1486,7 @@ function debugUnlockAllMechanics() {
     gameState.unlockedEnemyBehaviors.ambush = true;
     gameState.unlockedEnemyBehaviors.multiLevel = true;
     
-    if (DEBUG) console.log('[DEBUG] All mechanics unlocked');
+    log('DEBUG', 'all_unlocked', {});
 }
 
 window.onload = init;

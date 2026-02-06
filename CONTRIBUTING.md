@@ -22,16 +22,20 @@ Guidelines for contributing to the MantaSphere project.
 git clone https://github.com/finalFlick/mantasphere.git
 cd mantasphere
 
-# Start local server (pick one)
-python -m http.server 8000
-# or
-npx serve .
-# or use VS Code "Live Server" extension
+# Set up environment
+cp .env.example .env
+# Edit .env if you need playtest feedback (optional)
 
-# Open http://localhost:8000
+# Start dev mode (recommended)
+npm run dev
+# Opens watch mode + server on http://localhost:8000
+
+# OR: Unbundled dev (zero config, no build)
+python -m http.server 8000
+# Open http://localhost:8000/index.dev.html
 ```
 
-See [README.md](README.md) for full setup instructions.
+See [README.md](README.md) for all development options.
 
 ---
 
@@ -118,15 +122,41 @@ git push origin feat/your-feature
 | Rule | Why |
 |------|-----|
 | **NO npm Three.js** | Three.js is loaded via CDN (`r134`). `THREE` is a global. |
-| **NO build system** | Game runs directly in browser with ES Modules. |
+| **Use existing esbuild setup** | We use esbuild for bundling. Don't add additional build systems. |
 | **NO TypeScript** | Vanilla JavaScript only. |
 | **NO circular imports** | Use getter functions for cross-module state. |
+
+**Build System:**
+- We use esbuild for bundling (dev: `npm run dev`, prod: `npm run build`)
+- Unbundled mode available via `index.dev.html` for quick iteration
+- Don't add Webpack, Rollup, Vite, or other bundlers
 
 See `.cursorrules` for complete development guidelines.
 
 ---
 
 ## Issue Guidelines
+
+### GitHub App Bot Identity (for agents)
+
+If you want automated issue/comments to show as the agent bot (e.g., `manta-warden`) instead of your personal account:
+
+1. Create a GitHub App: `https://github.com/settings/apps/new`
+2. Permissions (minimum):
+   - Repository permissions → **Issues: Read & write**
+   - Repository permissions → **Metadata: Read-only**
+3. Install it on `finalFlick/mantasphere` (Only select repositories)
+4. Download the App private key (`.pem`) into `.secrets/` (gitignored)
+5. Create `.secrets/github-app.json` (gitignored) with your App ID + key path
+6. Mint a short-lived token and use it with `gh`:
+
+```powershell
+$token = (node scripts/gh-app-auth.js --repo finalFlick/mantasphere --raw).Trim()
+$env:GH_TOKEN = $token
+
+# Example: comment as the bot
+gh issue comment 19 -R finalFlick/mantasphere -b "Test comment from GitHub App bot identity"
+```
 
 ### Label Taxonomy
 
@@ -312,14 +342,16 @@ Follow the conventions in `.cursorrules`:
 
 ### Debug Logging
 
+Use the structured logging framework (see `.cursorrules` Section 17):
+
 ```javascript
-import { DEBUG } from '../config/constants.js';
-if (DEBUG) console.log('[System] Message');
+import { log, logWarn, logOnce, logThrottled } from '../systems/debugLog.js';
+log('TAG', 'event_name', { key: value });
 ```
 
-- Gate all `console.log` behind `DEBUG` flag
-- Keep `console.warn` for actual error conditions
-- Rate-limit warnings that could spam
+- **DO NOT use raw console.log** - Always use the framework
+- **Keep console.warn/error for actual errors** - Storage failures, missing features, etc.
+- **Rate-limit warnings that could spam** - Use `logThrottled()` or a "warned" flag
 
 ---
 

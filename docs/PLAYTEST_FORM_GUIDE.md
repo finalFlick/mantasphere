@@ -153,30 +153,45 @@ function sendDiscordNotification(data) {
   feedback = feedback
     .replace(/@(everyone|here)/gi, '[mention]')
     .replace(/<@!?\d+>/g, '[user]')
-    .replace(/\S+@\S+\.\S+/g, '[email]')
-    .replace(/\n/g, ' ');
-  if (feedback.length > 140) {
-    feedback = feedback.substring(0, 137) + '...';
+    .replace(/\S+@\S+\.\S+/g, '[email]');
+  if (feedback.length > 1024) {
+    feedback = feedback.substring(0, 1021) + '...';
   }
   
-  // Build message
-  let message = `📋 **Playtest v${data.version || '?'}** | Score ${data.score || '?'} | Arena ${data.arena || '?'} | ${data.time || '?'}\n`;
-  message += `Fun: ${data.q1 || '?'}/5 | Controls: ${data.q2 || '?'} | Clarity: ${data.q3 || '?'}\n`;
-  message += `Difficulty: ${data.q4 || '?'} | Play Again: ${data.q5 || '?'}`;
+  // Build embed fields
+  const fields = [
+    { name: 'Score', value: String(data.score || '?'), inline: true },
+    { name: 'Arena', value: String(data.arena || '?'), inline: true },
+    { name: 'Time', value: String(data.time || '?'), inline: true },
+    { name: 'Fun', value: `${data.q1 || '?'}/5`, inline: true },
+    { name: 'Controls', value: String(data.q2 || '?'), inline: true },
+    { name: 'Clarity', value: String(data.q3 || '?'), inline: true },
+    { name: 'Difficulty', value: String(data.q4 || '?'), inline: true },
+    { name: 'Play Again', value: String(data.q5 || '?'), inline: true }
+  ];
   
+  // Build embed
+  const embed = {
+    title: `Playtest v${data.version || '?'}`,
+    color: 5793266, // Discord Blurple
+    fields: fields
+  };
+  
+  // Add description if feedback exists
   if (feedback) {
-    message += `\n💬 "${feedback}"`;
+    embed.description = `"${feedback}"`;
   }
   
+  // Add footer if tester name exists
   if (data.testerName) {
-    message += `\n👤 ${data.testerName}`;
+    embed.footer = { text: data.testerName };
   }
   
   // Send to Discord
   UrlFetchApp.fetch(webhookUrl, {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ content: message })
+    payload: JSON.stringify({ embeds: [embed] })
   });
 }
 
@@ -193,6 +208,34 @@ function testSetup() {
   } else {
     console.log('Missing configuration. Add Script Properties.');
   }
+}
+
+// Test Discord embed (run manually to see how the embed looks)
+function testDiscordEmbed() {
+  const webhook = PropertiesService.getScriptProperties().getProperty('DISCORD_WEBHOOK');
+  if (!webhook) {
+    console.log('DISCORD_WEBHOOK not set. Add it as a Script Property first.');
+    return;
+  }
+  
+  // Sample test data
+  const testData = {
+    version: '0.2.3',
+    score: '29502381',
+    arena: '1',
+    time: '5:53',
+    q1: '3',
+    q2: 'Great',
+    q3: 'Always',
+    q4: 'Just Right',
+    q5: 'Definitely',
+    openFeedback: 'no',
+    testerName: 'finalFlick'
+  };
+  
+  console.log('Sending test Discord notification...');
+  sendDiscordNotification(testData);
+  console.log('Test notification sent! Check your Discord channel.');
 }
 ```
 
@@ -213,26 +256,28 @@ function testSetup() {
 
 1. Copy the example file:
    ```bash
-   cp js/config/debug.local.example.js js/config/debug.local.js
+   cp .env.example .env
    ```
 
-2. Edit `js/config/debug.local.js` and uncomment/fill in the PLAYTEST_CONFIG:
+2. Edit `.env` and fill in your values:
 
-```javascript
-export const DEBUG_SECRET = true;
-
-export const PLAYTEST_CONFIG = {
-  url: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
-  token: 'your-secret-token'
-};
+```env
+PLAYTEST_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
+PLAYTEST_TOKEN=your-secret-token
 ```
 
 | Field | Where to get it |
 |-------|-----------------|
-| `url` | The **Web app URL** from Step 4 (after clicking Deploy) |
-| `token` | The same token you set as `PLAYTEST_TOKEN` in Step 4's Script Properties |
+| `PLAYTEST_URL` | The **Web app URL** from Step 4 (after clicking Deploy) |
+| `PLAYTEST_TOKEN` | The same token you set as `PLAYTEST_TOKEN` in Step 4's Script Properties |
 
-> **Note:** `debug.local.js` is gitignored — your secrets won't be committed.
+3. Rebuild to inject the config:
+   ```bash
+   npm run build   # For production
+   npm run dev     # For development (watch mode)
+   ```
+
+> **Note:** `.env` is gitignored — your secrets won't be committed.
 
 ### Step 7: Create Playtest Label (1 min)
 
@@ -256,8 +301,8 @@ export const PLAYTEST_CONFIG = {
 3. If new rows exist:
    - Creates/finds version thread (e.g., `[Playtest] Feedback Thread - v0.2.x`)
    - Posts daily summary comment
-   - Commits raw data to `docs/playtests/YYYY-MM-DD.md`
    - Marks rows as processed
+4. Raw data remains in Google Sheets (source of truth)
 
 ---
 
@@ -294,8 +339,9 @@ export const PLAYTEST_CONFIG = {
 - Verify the service account has Editor access to the Sheet
 
 ### "Invalid token" errors
-- Ensure the token in `debug.local.js` matches PLAYTEST_TOKEN in Apps Script
+- Ensure `PLAYTEST_TOKEN` in `.env` matches PLAYTEST_TOKEN in Apps Script
 - Check for trailing spaces or quotes
+- Rebuild after changing `.env` (`npm run build` or `npm run dev`)
 
 ### No rows marked as processed
 - Ensure the Sheet has a "Processed" column (Column N)
@@ -316,8 +362,8 @@ The easiest way to test your connection:
 5. Check the result:
    - **Green "Connected (Xms)"** = Everything working
    - **Red "CORS error"** = Apps Script needs "Anyone" access (create new deployment)
-   - **Red "Invalid URL"** = Wrong URL in debug.local.js
-   - **Red "Not configured"** = Missing PLAYTEST_CONFIG in debug.local.js
+   - **Red "Invalid URL"** = Wrong URL in `.env`
+   - **Red "Not configured"** = Missing PLAYTEST_URL/TOKEN in `.env` (rebuild required)
 
 The console will show detailed diagnostics including:
 - Token validation status

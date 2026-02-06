@@ -1,25 +1,47 @@
 // Game Identity
 export const GAME_TITLE = 'Manta Sphere';
-export const VERSION = '0.2.4';  // Semantic versioning - see VERSION file and .cursorrules
+export const VERSION = '0.3.0';  // Semantic versioning - see VERSION file and .cursorrules
 export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_';
 
-// ==================== SECURE DEBUG MODE ====================
-// Debug requires BOTH conditions (unhackable in production):
-//   1. Running on localhost/127.0.0.1
-//   2. js/config/debug.local.js file exists (gitignored)
-// To enable: copy debug.local.example.js to debug.local.js
+// ==================== BUILD-TIME ENVIRONMENT CONFIG ====================
+// These globals are injected by esbuild at build time from .env file
+// Dev build (npm run dev): ENV_DEBUG_SECRET=true
+// Prod build (npm run build): ENV_DEBUG_SECRET=false
+// Unbundled dev (index.dev.html): window.__DEV_MODE__ = true
+// See .env.example for configuration template
+
+/* global ENV_DEBUG_SECRET, ENV_PLAYTEST_URL, ENV_PLAYTEST_TOKEN */
+// Build-injected globals (exist when bundled)
+// Falls back to window.__DEV_MODE__ for unbundled dev
+const RUNTIME_CONFIG = (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__) || null;
+
+// Debug is disabled by default unless explicitly enabled:
+// Priority: 1) runtime (Docker) config, 2) build-time injected flag, 3) unbundled dev mode.
+const DEBUG_SECRET =
+    (RUNTIME_CONFIG && RUNTIME_CONFIG.debug === true) ||
+    (typeof ENV_DEBUG_SECRET !== 'undefined' ? ENV_DEBUG_SECRET : false) ||
+    ((typeof window !== 'undefined' && window.__DEV_MODE__) || false);
+
+// Playtest config can be overridden at runtime (Docker env) or at build time (.env -> esbuild define)
+const PLAYTEST_URL =
+    (RUNTIME_CONFIG && typeof RUNTIME_CONFIG.playtestUrl === 'string' && RUNTIME_CONFIG.playtestUrl) ||
+    (typeof ENV_PLAYTEST_URL !== 'undefined' ? ENV_PLAYTEST_URL : '');
+const PLAYTEST_TOKEN =
+    (RUNTIME_CONFIG && typeof RUNTIME_CONFIG.playtestToken === 'string' && RUNTIME_CONFIG.playtestToken) ||
+    (typeof ENV_PLAYTEST_TOKEN !== 'undefined' ? ENV_PLAYTEST_TOKEN : '');
+
+// Playtest feedback configuration (from .env)
+export const PLAYTEST_CONFIG = PLAYTEST_URL ? {
+    url: PLAYTEST_URL,
+    token: PLAYTEST_TOKEN
+} : null;
+
+// ==================== DEBUG MODE ====================
 let DEBUG_ENABLED = false;
 
-// Synchronous localhost check (debug.local.js import happens async in main.js)
-function isLocalhost() {
-    if (typeof window === 'undefined') return false;
-    const host = window.location.hostname;
-    return host === 'localhost' || host === '127.0.0.1';
-}
-
-// Export function to enable debug after async import succeeds
+// Enable debug mode if build was configured with DEBUG_SECRET=true
 export function enableDebugMode() {
-    if (!isLocalhost()) return false;
+    if (!DEBUG_SECRET) return false;
     DEBUG_ENABLED = true;
     DEBUG_CONFIG.level = 'info';
     DEBUG_CONFIG.tags.WAVE = true;
@@ -28,9 +50,12 @@ export function enableDebugMode() {
     DEBUG_CONFIG.tags.SCORE = true;
     DEBUG_CONFIG.tags.STATE = true;
     DEBUG_CONFIG.tags.SAFETY = true;
-    console.log('%c[DEBUG MODE]', 'color: #ffdd44; font-weight: bold', 'Secure debug enabled (localhost + debug.local.js)');
+    console.log('%c[DEBUG MODE]', 'color: #ffdd44; font-weight: bold', 'Enabled (dev build)');
     return true;
 }
+
+// Export DEBUG_ENABLED for dynamic debug checks
+export { DEBUG_ENABLED };
 
 // Debug Logging Configuration
 // Level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'
@@ -44,12 +69,17 @@ export const DEBUG_CONFIG = {
         SCORE: false,
         STATE: false,
         SAFETY: false,
-        PERF: false
+        PERF: false,
+        DEBUG: false,    // Debug menu operations
+        MUSIC: false,    // PulseMusic system
+        PLAYTEST: false  // Playtest feedback system
     }
 };
 
-// Backward compatibility alias (updated dynamically by enableDebugMode)
-export const DEBUG = DEBUG_CONFIG.level !== 'silent';
+// Backward compatibility alias (getter function to check current state)
+export function DEBUG() {
+    return DEBUG_ENABLED;
+}
 
 // Game constants
 export const DAMAGE_COOLDOWN = 500;

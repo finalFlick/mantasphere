@@ -14,6 +14,7 @@ import { ARENA_CONFIG } from '../config/arenas.js';
 import { spawnEnemyProjectileFromPool } from '../systems/projectiles.js';
 import { markEnemyEncountered } from '../ui/rosterUI.js';
 import { log, logOnce, logThrottled } from '../systems/debugLog.js';
+import { TUNING } from '../config/tuning.js';
 
 // Cache pillar positions for pillar hopper behavior
 let cachedPillarTops = [];
@@ -42,6 +43,11 @@ export function clearEnemyGeometryCache() {
         }
         coneGeometryCache.clear();
     }
+}
+
+function getEnemySpeedTuningMultiplier() {
+    const multRaw = Number(TUNING.enemySpeedMultiplier || 1.0);
+    return Math.max(0.25, Math.min(3.0, multRaw || 1.0));
 }
 
 // Check if a position is valid for enemy placement (not in hazards or obstacles)
@@ -433,6 +439,18 @@ function getSafeSpawnAngle(playerVelocity) {
     return spawnAngle;
 }
 
+// Arena 1 specific: Spawn within the forward 180° arc relative to the player's movement direction.
+// This reduces "rear spawn" moments that feel like off-screen ambushes.
+function getForward180SpawnAngle(playerVelocity) {
+    if (!playerVelocity) return Math.random() * Math.PI * 2;
+    const horizontalSpeed = Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.z * playerVelocity.z);
+    if (horizontalSpeed < 0.01) return Math.random() * Math.PI * 2;
+    
+    const moveAngle = Math.atan2(playerVelocity.z, playerVelocity.x);
+    const halfArc = Math.PI / 2; // +/- 90° around "ahead of movement"
+    return moveAngle + Math.PI + (Math.random() * 2 - 1) * halfArc;
+}
+
 // Check if two points are in the same corridor segment (Arena 5)
 // Corridors are the outer perimeter areas beyond the tunnel walls
 function isInSameCorridor(x1, z1, x2, z2) {
@@ -481,15 +499,32 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     const choreography = gameState.waveChoreography;
     if (choreography && choreography.type !== 'random' && SPAWN_CHOREOGRAPHY.enabled) {
         let pos = null;
+        let chosenDirection = null;
         
         if (choreography.type === 'lane') {
             // All enemies from one direction
-            pos = getChoreographedSpawnPosition(choreography.primaryDirection);
+            chosenDirection = choreography.primaryDirection;
+            pos = getChoreographedSpawnPosition(chosenDirection);
         } else if (choreography.type === 'pincer') {
             // Alternate between two opposite directions
             const useSecondary = Math.random() < 0.5;
-            const direction = useSecondary ? choreography.secondaryDirection : choreography.primaryDirection;
-            pos = getChoreographedSpawnPosition(direction);
+            chosenDirection = useSecondary ? choreography.secondaryDirection : choreography.primaryDirection;
+            pos = getChoreographedSpawnPosition(chosenDirection);
+        } else if (choreography.type === 'flank') {
+            // Majority from one direction, some from perpendiculars
+            const flankDirs = choreography.flankDirections || [];
+            const r = Math.random();
+            chosenDirection = choreography.primaryDirection;
+            if (flankDirs.length === 2) {
+                if (r > 0.75) chosenDirection = flankDirs[0];
+                else if (r > 0.5) chosenDirection = flankDirs[1];
+            }
+            pos = getChoreographedSpawnPosition(chosenDirection);
+        } else if (choreography.type === 'burst') {
+            // Any direction (high-pressure). Randomize per-spawn.
+            const dirs = SPAWN_CHOREOGRAPHY.directions;
+            chosenDirection = dirs[Math.floor(Math.random() * dirs.length)];
+            pos = getChoreographedSpawnPosition(chosenDirection);
         }
         
         if (pos) {
@@ -521,13 +556,23 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
             angle = toCenterAngle + (Math.random() - 0.5) * Math.PI * 0.8;
             distance = 20 + Math.random() * 10;  // Closer spawns when edge-kiting
         } else {
-            // Player is in center area - use safe arc spawning
-            angle = getSafeSpawnAngle(playerVelocity);
+            // Player is in center area - use forward arc spawning for Arena 1 fairness
+            if (arena === 1) angle = getForward180SpawnAngle(playerVelocity);
+            else angle = getSafeSpawnAngle(playerVelocity);
         }
     } else {
         // No special config - just use safe arc spawning
-        angle = getSafeSpawnAngle(playerVelocity);
+        if (arena === 1) angle = getForward180SpawnAngle(playerVelocity);
+        else angle = getSafeSpawnAngle(playerVelocity);
     }
+
+    // Debug tuning: enforce minimum spawn distance from player
+    const safeRadiusRaw = Number(TUNING.spawnSafeZoneRadius ?? 0);
+    const safeRadius = Math.max(0, Math.min(30, safeRadiusRaw || 0));
+    if (safeRadius > 0) {
+        distance = Math.max(distance, safeRadius);
+    }
+    
     
     // Calculate position
     let x = playerPos.x + Math.cos(angle) * distance;
@@ -632,6 +677,11 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     enemy.isBoss = false;
     enemy.isElite = typeData.spawnWeight < 10;
     enemy.xpValue = Math.floor(typeData.xpValue * xpMult);
+
+    // Difficulty scaling (debug lever)
+    const difficultyRaw = Number(TUNING.difficultyMultiplier ?? 1.0);
+    const difficultyMult = Math.max(0.5, Math.min(2.0, difficultyRaw || 1.0));
+    enemy.damage = Math.max(1, Math.floor(enemy.damage * difficultyMult));
     
     // Wave progression XP bonus: +15% per wave after wave 1
     const waveBonus = 1 + (gameState.currentWave - 1) * 0.15;
@@ -667,6 +717,32 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     enemy.movementTimer = Math.random() * 100;  // Offset for variety
     enemy.telegraphActive = false;
     enemy.telegraphTimer = 0;
+
+    // Debug UX: spawn warning particles for close spawns (helps catch off-screen ambushes)
+    if (TUNING.offScreenWarningEnabled) {
+        const distToPlayer = enemy.position.distanceTo(player.position);
+        if (distToPlayer < 25) {
+            spawnParticle(enemy.position.clone(), enemy.baseColor, 4);
+        }
+    }
+
+    // Debug feature toggle: Elite variants (apply after base stats computed)
+    const eliteChanceRaw = Number(TUNING.eliteSpawnChance ?? 0);
+    const eliteChance = Math.max(0, Math.min(1, eliteChanceRaw || 0));
+    if (!enemy.isElite && eliteChance > 0 && Math.random() < eliteChance) {
+        enemy.isElite = true;
+        enemy.health = Math.floor(enemy.health * 1.8);
+        enemy.maxHealth = enemy.health;
+        enemy.damage = Math.floor(enemy.damage * 1.3);
+        enemy.eliteVariant = true;
+
+        // Visual pop: golden emissive tint
+        const mat = enemy.baseMaterial || enemy.material;
+        if (mat && mat.emissive) {
+            mat.emissive.setHex(0xffdd44);
+            mat.emissiveIntensity = 0.9;
+        }
+    }
     
     // Behavior-specific properties
     if (typeData.behavior === 'shooter') {
@@ -718,6 +794,7 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     
     scene.add(enemy);
     enemies.push(enemy);
+    PulseMusic.onEnemySpawn(enemy);
     
     return enemy;
 }
@@ -1161,6 +1238,7 @@ export function spawnSplitEnemy(position, parentSize, index = 0, totalCount = 3)
     
     scene.add(enemy);
     enemies.push(enemy);
+    PulseMusic.onEnemySpawn(enemy);
 }
 
 export function spawnSpecificEnemy(typeName, nearPosition) {
@@ -1244,6 +1322,7 @@ export function spawnSpecificEnemy(typeName, nearPosition) {
     
     scene.add(enemy);
     enemies.push(enemy);
+    PulseMusic.onEnemySpawn(enemy);
 }
 
 // Spawn Pillar Police on all pillars (for Arena 2-3)
@@ -1497,6 +1576,7 @@ export function updateEnemies(delta) {
                 const typeName = ENEMY_TYPES[enemy.enemyType]?.name || enemy.enemyType || 'Enemy';
                 takeDamage(enemy.damage, typeName, 'enemy');
                 resetDamageCooldown();
+                PulseMusic.onEnemyAttack(enemy);
             }
             tempVec3.subVectors(enemy.position, player.position).normalize();
             enemy.position.add(tempVec3.multiplyScalar(0.5));
@@ -1636,7 +1716,10 @@ function updateTelegraph(enemy) {
         const dist = enemy.position.distanceTo(player.position);
         // Check if nearing shoot time (within 30 frames of shooting)
         const framesUntilShoot = enemy.shootCooldownFrames - (enemy.shootTimer || 0);
-        const telegraphFrames = enemy.telegraph.duration ? Math.floor(enemy.telegraph.duration / 16.67) : 30;
+        const telegraphMultRaw = Number(TUNING.telegraphDurationMult ?? 1.0);
+        const telegraphMult = Math.max(0.5, Math.min(2.0, telegraphMultRaw || 1.0));
+        const baseTelegraphFrames = enemy.telegraph.duration ? Math.floor(enemy.telegraph.duration / 16.67) : 30;
+        const telegraphFrames = Math.max(1, Math.floor(baseTelegraphFrames * telegraphMult));
         if (dist < enemy.shootRange && framesUntilShoot < telegraphFrames) {
             shouldTelegraph = true;
         }
@@ -1696,6 +1779,7 @@ function calculateSteeringForce(enemy, desiredDir) {
 
 function updateChaseEnemy(enemy) {
     const dist = enemy.position.distanceTo(player.position);
+    const tuningMult = getEnemySpeedTuningMultiplier();
     
     // Closing speed acceleration - enemies speed up when close to player
     let speedMultiplier = 1.0;
@@ -1712,8 +1796,8 @@ function updateChaseEnemy(enemy) {
     tempVec3.add(steerForce);
     tempVec3.normalize();
     
-    enemy.position.x += tempVec3.x * enemy.speed * speedMultiplier;
-    enemy.position.z += tempVec3.z * enemy.speed * speedMultiplier;
+    enemy.position.x += tempVec3.x * enemy.speed * speedMultiplier * tuningMult;
+    enemy.position.z += tempVec3.z * enemy.speed * speedMultiplier * tuningMult;
     
     if (gameState.unlockedEnemyBehaviors.jumping) {
         for (const obs of obstacles) {
@@ -1733,6 +1817,7 @@ function updateChaseEnemy(enemy) {
 
 function updateShooterEnemy(enemy) {
     const dist = enemy.position.distanceTo(player.position);
+    const tuningMult = getEnemySpeedTuningMultiplier();
     
     // Increment shoot timer
     enemy.shootTimer = (enemy.shootTimer || 0) + 1;
@@ -1741,26 +1826,28 @@ function updateShooterEnemy(enemy) {
         tempVec3.subVectors(player.position, enemy.position);
         tempVec3.y = 0;
         tempVec3.normalize();
-        enemy.position.x += tempVec3.x * enemy.speed;
-        enemy.position.z += tempVec3.z * enemy.speed;
+        enemy.position.x += tempVec3.x * enemy.speed * tuningMult;
+        enemy.position.z += tempVec3.z * enemy.speed * tuningMult;
     } else if (dist < enemy.shootRange * 0.5) {
         tempVec3.subVectors(enemy.position, player.position);
         tempVec3.y = 0;
         tempVec3.normalize();
-        enemy.position.x += tempVec3.x * enemy.speed * 0.5;
-        enemy.position.z += tempVec3.z * enemy.speed * 0.5;
+        enemy.position.x += tempVec3.x * enemy.speed * 0.5 * tuningMult;
+        enemy.position.z += tempVec3.z * enemy.speed * 0.5 * tuningMult;
     }
     
     // Frame-based shooting cooldown
     if (dist < enemy.shootRange && enemy.shootTimer >= enemy.shootCooldownFrames) {
         spawnEnemyProjectile(enemy, player.position.clone());
+        PulseMusic.onEnemyAttack(enemy);
         enemy.shootTimer = 0;
     }
 }
 
 function updateBouncerEnemy(enemy) {
-    enemy.position.x += enemy.velocity.x;
-    enemy.position.z += enemy.velocity.z;
+    const tuningMult = getEnemySpeedTuningMultiplier();
+    enemy.position.x += enemy.velocity.x * tuningMult;
+    enemy.position.z += enemy.velocity.z * tuningMult;
     
     // Wall bouncing
     if (enemy.position.x < -42 || enemy.position.x > 42) {
@@ -1824,9 +1911,10 @@ function updateBouncerEnemy(enemy) {
     
     // Speed cap
     const speed = Math.sqrt(enemy.velocity.x * enemy.velocity.x + enemy.velocity.z * enemy.velocity.z);
-    if (speed > enemy.speed) {
-        enemy.velocity.x = enemy.velocity.x / speed * enemy.speed;
-        enemy.velocity.z = enemy.velocity.z / speed * enemy.speed;
+    const speedCap = enemy.speed * tuningMult;
+    if (speed > speedCap) {
+        enemy.velocity.x = (enemy.velocity.x / speed) * speedCap;
+        enemy.velocity.z = (enemy.velocity.z / speed) * speedCap;
     }
     
     // Trail particles for enhanced visibility
@@ -1837,6 +1925,7 @@ function updateBouncerEnemy(enemy) {
 
 function updateShieldBreakerEnemy(enemy) {
     const dist = enemy.position.distanceTo(player.position);
+    const tuningMult = getEnemySpeedTuningMultiplier();
     
     // Windup phase before rush (telegraph)
     if (dist < enemy.rushRange && !enemy.isRushing && !enemy.rushWindupTimer) {
@@ -1860,6 +1949,7 @@ function updateShieldBreakerEnemy(enemy) {
         
         if (enemy.rushWindupTimer <= 0) {
             enemy.isRushing = true;
+            PulseMusic.onEnemyAttack(enemy);
             enemy.scale.set(1, 1, 1);
             // Cleanup telegraph
             if (enemy.rushTelegraph) {
@@ -1871,7 +1961,7 @@ function updateShieldBreakerEnemy(enemy) {
     }
     
     if (enemy.isRushing) {
-        enemy.position.add(enemy.rushDirection.clone().multiplyScalar(enemy.rushSpeed));
+        enemy.position.add(enemy.rushDirection.clone().multiplyScalar(enemy.rushSpeed * tuningMult));
         if (Math.abs(enemy.position.x) > 42 || Math.abs(enemy.position.z) > 42) {
             enemy.isRushing = false;
             enemy.position.x = Math.max(-42, Math.min(42, enemy.position.x));
@@ -1883,11 +1973,12 @@ function updateShieldBreakerEnemy(enemy) {
 }
 
 function updateWaterBalloonEnemy(enemy) {
+    const tuningMult = getEnemySpeedTuningMultiplier();
     tempVec3.subVectors(player.position, enemy.position);
     tempVec3.y = 0;
     tempVec3.normalize();
-    enemy.position.x += tempVec3.x * enemy.speed;
-    enemy.position.z += tempVec3.z * enemy.speed;
+    enemy.position.x += tempVec3.x * enemy.speed * tuningMult;
+    enemy.position.z += tempVec3.z * enemy.speed * tuningMult;
     
     if (enemy.size < enemy.maxSize) {
         enemy.size += enemy.growRate;
@@ -1908,6 +1999,7 @@ export function explodeWaterBalloon(enemy) {
 
 function updateTeleporterEnemy(enemy) {
     const dist = enemy.position.distanceTo(player.position);
+    const tuningMult = getEnemySpeedTuningMultiplier();
     
     // Increment teleport timer
     enemy.teleportTimer = (enemy.teleportTimer || 0) + 1;
@@ -1944,13 +2036,14 @@ function updateTeleporterEnemy(enemy) {
         tempVec3.subVectors(player.position, enemy.position);
         tempVec3.y = 0;
         tempVec3.normalize();
-        enemy.position.x += tempVec3.x * enemy.speed * 0.5;
-        enemy.position.z += tempVec3.z * enemy.speed * 0.5;
+        enemy.position.x += tempVec3.x * enemy.speed * 0.5 * tuningMult;
+        enemy.position.z += tempVec3.z * enemy.speed * 0.5 * tuningMult;
     }
 }
 
 // Pillar Police - hops between pillar tops, hunts players who camp on pillars
 function updatePillarHopperEnemy(enemy) {
+    const tuningMult = getEnemySpeedTuningMultiplier();
     // Initialize state if needed
     if (!enemy.hopState) {
         enemy.hopState = 'idle';
@@ -2020,8 +2113,8 @@ function updatePillarHopperEnemy(enemy) {
                 tempVec3.subVectors(player.position, enemy.position);
                 tempVec3.y = 0;
                 tempVec3.normalize();
-                enemy.position.x += tempVec3.x * enemy.speed * 2.5;
-                enemy.position.z += tempVec3.z * enemy.speed * 2.5;
+                enemy.position.x += tempVec3.x * enemy.speed * 2.5 * tuningMult;
+                enemy.position.z += tempVec3.z * enemy.speed * 2.5 * tuningMult;
             }
             break;
             
@@ -2059,8 +2152,8 @@ function updatePillarHopperEnemy(enemy) {
             
         case 'hopping':
             // In the air
-            enemy.position.x += enemy.hopVelocity.x;
-            enemy.position.z += enemy.hopVelocity.z;
+            enemy.position.x += enemy.hopVelocity.x * tuningMult;
+            enemy.position.z += enemy.hopVelocity.z * tuningMult;
             enemy.velocityY = enemy.hopVelocity.y;
             enemy.hopVelocity.y -= 0.02; // Gravity
             
@@ -2150,6 +2243,7 @@ export function spawnEnemyProjectile(enemy, targetPos) {
 
 // Handle enemy death effects (called from projectiles.js)
 export function handleEnemyDeath(enemy) {
+    PulseMusic.onEnemyDeath(enemy);
     // Track kill for combat stats
     if (gameState.combatStats) {
         const type = enemy.enemyType || 'unknown';

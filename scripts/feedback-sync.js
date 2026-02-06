@@ -2,7 +2,8 @@
  * Playtest Feedback Sync Script
  * 
  * Reads unprocessed rows from Google Sheets, aggregates stats,
- * posts a daily comment to the version thread, and marks rows as processed.
+ * posts a daily comment to the GitHub version thread, and marks rows as processed.
+ * Raw data remains in Google Sheets (source of truth).
  * 
  * Environment variables required:
  *   GSHEET_ID - Google Sheet ID (from URL)
@@ -14,8 +15,6 @@
 
 import { google } from 'googleapis';
 import { Octokit } from '@octokit/rest';
-import fs from 'node:fs';
-import path from 'node:path';
 
 // ============================================================================
 // Configuration
@@ -143,12 +142,7 @@ async function main() {
   // 5. Aggregate stats
   const stats = aggregateStats(unprocessedRows);
   
-  // 6. Write raw data doc
-  const docPath = `docs/playtests/${today}.md`;
-  writeRawDoc(docPath, today, unprocessedRows, stats);
-  console.log(`Wrote ${docPath}`);
-  
-  // 7. Post comment to thread
+  // 6. Post comment to thread
   const comment = formatComment(today, stats, unprocessedRows);
   await octokit.issues.createComment({
     owner: REPO_OWNER,
@@ -158,7 +152,7 @@ async function main() {
   });
   console.log(`Posted comment to issue #${thread.number}`);
   
-  // 8. Mark rows as processed
+  // 7. Mark rows as processed
   await markRowsProcessed(unprocessedIndices, today);
   console.log(`Marked ${unprocessedIndices.length} rows as processed`);
   
@@ -224,10 +218,10 @@ async function alreadyPostedToday(issueNumber, today) {
     per_page: 50
   });
   
-  return comments.some(c => 
-    c.user?.login === 'github-actions[bot]' && 
-    c.body?.includes(`## ${today}`)
-  );
+  // Authorship can vary (github-actions bot token vs GitHub App token). Use content-based idempotency.
+  const dateHeading = `## ${today}`;
+  const rawLink = `[Raw data](docs/playtests/${today}.md)`;
+  return comments.some((c) => c.body?.includes(dateHeading) && c.body?.includes(rawLink));
 }
 
 /**
@@ -336,56 +330,9 @@ function formatComment(today, stats, rows) {
     }
   }
   
-  md += `\n[Raw data](docs/playtests/${today}.md)`;
+  md += `\n*Raw data stored in Google Sheets*`;
   
   return md;
-}
-
-/**
- * Write raw data markdown file
- */
-function writeRawDoc(filePath, today, rows, stats) {
-  // Ensure directory exists
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  
-  let md = `# Playtest Feedback - ${today}\n\n`;
-  md += `**Total Responses:** ${rows.length}\n\n`;
-  
-  // Version summary
-  const versionStr = Object.entries(stats.versions)
-    .map(([v, c]) => `${v} (${c})`)
-    .join(', ');
-  md += `**Versions:** ${versionStr}\n\n`;
-  
-  md += `---\n\n`;
-  
-  // Individual responses
-  md += `## Individual Responses\n\n`;
-  
-  rows.forEach((row, idx) => {
-    md += `### Response ${idx + 1}\n\n`;
-    md += `- **Timestamp:** ${row[COL.TIMESTAMP] || 'N/A'}\n`;
-    md += `- **Version:** ${row[COL.VERSION] || 'N/A'}\n`;
-    md += `- **Tester:** ${row[COL.TESTER_NAME] || 'Anonymous'}\n`;
-    md += `- **Stats:** Arena ${row[COL.ARENA] || '?'}, Wave ${row[COL.WAVE] || '?'}, Score ${row[COL.SCORE] || '?'}, Time ${row[COL.TIME] || '?'}\n`;
-    md += `- **Fun:** ${row[COL.Q1] || 'N/A'}/5\n`;
-    md += `- **Controls:** ${row[COL.Q2] || 'N/A'}\n`;
-    md += `- **Clarity:** ${row[COL.Q3] || 'N/A'}\n`;
-    md += `- **Difficulty:** ${row[COL.Q4] || 'N/A'}\n`;
-    md += `- **Play Again:** ${row[COL.Q5] || 'N/A'}\n`;
-    
-    const feedback = row[COL.OPEN_FEEDBACK]?.trim();
-    if (feedback) {
-      md += `- **Feedback:** "${feedback}"\n`;
-    }
-    
-    md += `\n`;
-  });
-  
-  fs.writeFileSync(filePath, md);
 }
 
 /**
