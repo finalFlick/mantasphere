@@ -10,7 +10,7 @@
     "feedback-sync": "node scripts/feedback-sync.js"
   },
   "dependencies": {
-    "googleapis": "^134.0.0",
+    "googleapis": "^171.4.0",
     "@octokit/rest": "^20.0.0"
   },
   "devDependencies": {
