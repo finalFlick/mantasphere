@@ -307,6 +307,12 @@
         #pause-main-menu-btn:hover { border-color: #ff6666; color: #ff6666; }
         #pause-debug-btn { border-color: #ff8800; color: #ff8800; display: none; }
         #pause-debug-btn:hover { border-color: #ffaa44; color: #ffaa44; }
+
+        .pause-audio-controls { margin: 20px 0; padding: 15px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; }
+        .audio-slider-row { display: flex; align-items: center; gap: 15px; margin: 10px 0; }
+        .audio-slider-row label { min-width: 120px; text-align: right; color: #aaa; font-size: 14px; }
+        .audio-slider-row input[type="range"] { flex: 1; max-width: 200px; }
+        .audio-slider-row span { min-width: 40px; color: #ffdd44; font-weight: bold; font-size: 14px; }
         
         /* Version Display - always visible */
         #version-display { position: fixed; bottom: 10px; right: 10px; font-size: 12px; color: rgba(255, 255, 255, 0.3); font-family: monospace; z-index: 10000; pointer-events: none; }
@@ -472,7 +478,33 @@
         </div>
         
         <!-- Menus -->
-        <div id="pause-indicator">PAUSED<p>Click anywhere to resume</p><button id="pause-roster-btn">View Roster</button><button id="pause-feedback-btn">Feedback</button><button id="pause-debug-btn">Debug</button><button id="pause-main-menu-btn">Main Menu</button></div>
+        <div id="pause-indicator">
+            <h2>PAUSED</h2>
+            <p>Click anywhere to resume</p>
+
+            <div class="pause-audio-controls">
+                <div class="audio-slider-row">
+                    <label for="master-volume">Master Volume</label>
+                    <input type="range" id="master-volume" min="0" max="100" value="70" step="1">
+                    <span id="master-volume-value">70%</span>
+                </div>
+                <div class="audio-slider-row">
+                    <label for="music-volume">Music Volume</label>
+                    <input type="range" id="music-volume" min="0" max="100" value="50" step="1">
+                    <span id="music-volume-value">50%</span>
+                </div>
+                <div class="audio-slider-row">
+                    <label for="sfx-volume">SFX Volume</label>
+                    <input type="range" id="sfx-volume" min="0" max="100" value="70" step="1">
+                    <span id="sfx-volume-value">70%</span>
+                </div>
+            </div>
+
+            <button id="pause-roster-btn">View Roster</button>
+            <button id="pause-feedback-btn">Feedback</button>
+            <button id="pause-debug-btn">Debug</button>
+            <button id="pause-main-menu-btn">Main Menu</button>
+        </div>
         
         <div id="upgrade-menu">
             <h2>LEVEL UP!</h2>

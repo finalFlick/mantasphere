@@ -404,6 +404,59 @@ async function init() {
             showFeedbackOverlay('pause');
         });
     }
+
+    // Pause menu audio sliders (stopPropagation so tweaking sliders doesn't resume via pointer lock click handler)
+    const masterVolumeSlider = document.getElementById('master-volume');
+    const musicVolumeSlider = document.getElementById('music-volume');
+    const sfxVolumeSlider = document.getElementById('sfx-volume');
+
+    const masterVolumeValue = document.getElementById('master-volume-value');
+    const musicVolumeValue = document.getElementById('music-volume-value');
+    const sfxVolumeValue = document.getElementById('sfx-volume-value');
+
+    function stopResumeClick(e) {
+        e.stopPropagation();
+    }
+
+    if (masterVolumeSlider) {
+        addTrackedListener(masterVolumeSlider, 'mousedown', stopResumeClick);
+        addTrackedListener(masterVolumeSlider, 'click', stopResumeClick);
+        addTrackedListener(masterVolumeSlider, 'input', (e) => {
+            stopResumeClick(e);
+            const value = parseInt(e.target.value, 10);
+            const vol = (Number.isFinite(value) ? value : 70) / 100;
+            PulseMusic.setMasterVolume(vol);
+            if (masterVolumeValue) masterVolumeValue.textContent = `${value}%`;
+        });
+    }
+
+    if (musicVolumeSlider) {
+        addTrackedListener(musicVolumeSlider, 'mousedown', stopResumeClick);
+        addTrackedListener(musicVolumeSlider, 'click', stopResumeClick);
+        addTrackedListener(musicVolumeSlider, 'input', (e) => {
+            stopResumeClick(e);
+            const value = parseInt(e.target.value, 10);
+            const vol = (Number.isFinite(value) ? value : 50) / 100;
+            if (PulseMusic.musicBus && PulseMusic.ctx) {
+                PulseMusic.musicBus.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), PulseMusic.ctx.currentTime);
+            }
+            if (musicVolumeValue) musicVolumeValue.textContent = `${value}%`;
+        });
+    }
+
+    if (sfxVolumeSlider) {
+        addTrackedListener(sfxVolumeSlider, 'mousedown', stopResumeClick);
+        addTrackedListener(sfxVolumeSlider, 'click', stopResumeClick);
+        addTrackedListener(sfxVolumeSlider, 'input', (e) => {
+            stopResumeClick(e);
+            const value = parseInt(e.target.value, 10);
+            const vol = (Number.isFinite(value) ? value : 70) / 100;
+            if (PulseMusic.sfxBus && PulseMusic.ctx) {
+                PulseMusic.sfxBus.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), PulseMusic.ctx.currentTime);
+            }
+            if (sfxVolumeValue) sfxVolumeValue.textContent = `${value}%`;
+        });
+    }
     
     // Main menu feedback button
     const menuFeedbackBtn = document.getElementById('menu-feedback-btn');

@@ -1222,6 +1222,33 @@ export const PulseMusic = {
     onLevelUp() {
         this.playLevelUpStinger();
     },
+
+    onXpPickup() {
+        if (!this._checkReady()) return;
+
+        // Quick chime pitched to arena key
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // Random scale degree for variety
+        const rootMidi = this.currentProfile.rootMidi;
+        const scale = this.currentProfile.scaleIntervals;
+        const degree = scale[Math.floor(Math.random() * scale.length)];
+
+        osc.frequency.setValueAtTime(this.midiToFreq(rootMidi + degree + 12), now);
+        osc.type = 'sine';
+
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        osc.connect(gain);
+        gain.connect(this.sfxBus);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        osc.endTime = now + 0.15;
+        this.activeOscillators.push(osc);
+    },
     
     onGameOver() {
         this.stopMusicLoop();
