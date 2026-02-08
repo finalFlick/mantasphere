@@ -2,6 +2,7 @@ import { scene } from '../core/scene.js';
 import { gameState, getDifficultyConfig } from '../core/gameState.js';
 import { enemies, obstacles, hazardZones, tempVec3 } from '../core/entities.js';
 import { player } from './player.js';
+import { cameraAngleX } from '../core/input.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
 import { ENEMY_CAPS, WAVE_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, THREAT_BUDGET, SPLITLING_SPAWN_STUN_FRAMES, SCHOOL_CONFIG, SPAWN_CHOREOGRAPHY } from '../config/constants.js';
 import { spawnParticle, spawnEnemyDeathVfx, spawnShieldBreakVFX } from '../effects/particles.js';
