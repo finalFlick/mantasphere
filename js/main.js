@@ -3,7 +3,7 @@ import { gameState, resetGameState } from './core/gameState.js';
 import { initScene, createGround, onWindowResize, render, scene, renderer, camera } from './core/scene.js';
 import { initInput, resetInput, checkCutsceneSkip, cleanupInput } from './core/input.js';
 import { resetAllEntities, enemies, getCurrentBoss } from './core/entities.js';
-import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, COMMIT_HASH, enableDebugMode, PLAYTEST_CONFIG, DEFAULT_LIVES } from './config/constants.js';
+import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, COMMIT_HASH, COMMIT_TIME_ISO, BUILD_TIME_ISO, enableDebugMode, PLAYTEST_CONFIG, DEFAULT_LIVES } from './config/constants.js';
 import { setDifficulty, getDifficultyConfig } from './core/gameState.js';
 
 import { createPlayer, updatePlayer, resetPlayer, player } from './entities/player.js';
@@ -233,7 +233,25 @@ async function init() {
     // Show version display
     const versionEl = document.getElementById('version-display');
     if (versionEl) {
-        versionEl.textContent = `v${VERSION} (${COMMIT_HASH})`;
+        let displayText = `v${VERSION} (${COMMIT_HASH})`;
+        // Add timestamps if available (bundled builds) - format to HH:mm:ss
+        // commit = when the git commit was created
+        // build = when the bundle.js was compiled/built
+        if (COMMIT_TIME_ISO !== 'unknown' && BUILD_TIME_ISO !== 'unknown') {
+            const formatTime = (isoString) => {
+                try {
+                    const date = new Date(isoString);
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    const seconds = String(date.getSeconds()).padStart(2, '0');
+                    return `${hours}:${minutes}:${seconds}`;
+                } catch {
+                    return 'unknown';
+                }
+            };
+            displayText += ` commit:${formatTime(COMMIT_TIME_ISO)} build:${formatTime(BUILD_TIME_ISO)}`;
+        }
+        versionEl.textContent = displayText;
     }
     
     initScene();
@@ -1515,9 +1533,10 @@ function debugGiveLevels(count) {
         return;
     }
 
-    applyBaselineLevelScaling(count);
+    // Set pending level ups so the level up menu will show
+    gameState.pendingLevelUps += count;
     updateUI();
-    log('DEBUG', 'levels_given', { count, newLevel: gameState.level });
+    log('DEBUG', 'levels_given', { count, pendingLevelUps: gameState.pendingLevelUps });
 }
 
 function debugToggleInvincibility() {

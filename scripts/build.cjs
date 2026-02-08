@@ -14,8 +14,17 @@ function loadEnv() {
     const content = fs.readFileSync(envPath, 'utf8');
     const env = {};
     for (const line of content.split('\n')) {
-        const match = line.match(/^([^#=]+)=(.*)$/);
-        if (match) env[match[1].trim()] = match[2].trim();
+        // Remove carriage returns and trim
+        const cleanLine = line.replace(/\r$/, '').trim();
+        // Skip empty lines and comments
+        if (!cleanLine || cleanLine.startsWith('#')) continue;
+        
+        const match = cleanLine.match(/^([^#=]+)=(.*)$/);
+        if (match) {
+            const key = match[1].trim();
+            const value = match[2].trim();
+            env[key] = value;
+        }
     }
     return env;
 }
@@ -29,6 +38,21 @@ function getCommitHash() {
     } catch {
         return 'unknown';
     }
+}
+
+function getCommitTimeIso() {
+    try {
+        return execSync('git show -s --format=%cI HEAD', {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+    } catch {
+        return 'unknown';
+    }
+}
+
+function getBuildTimeIso() {
+    return new Date().toISOString();
 }
 
 const env = loadEnv();
@@ -54,6 +78,8 @@ const config = {
         'ENV_PLAYTEST_URL': JSON.stringify(env.PLAYTEST_URL || ''),
         'ENV_PLAYTEST_TOKEN': JSON.stringify(env.PLAYTEST_TOKEN || ''),
         'ENV_COMMIT_HASH': JSON.stringify(getCommitHash()),
+        'ENV_COMMIT_TIME_ISO': JSON.stringify(getCommitTimeIso()),
+        'ENV_BUILD_TIME_ISO': JSON.stringify(getBuildTimeIso()),
     }
 };
 

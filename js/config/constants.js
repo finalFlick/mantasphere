@@ -12,7 +12,7 @@ export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_'
 // Unbundled dev (index.dev.html): window.__DEV_MODE__ = true
 // See .env.example for configuration template
 
-/* global ENV_DEBUG_SECRET, ENV_PLAYTEST_URL, ENV_PLAYTEST_TOKEN, ENV_COMMIT_HASH */
+/* global ENV_DEBUG_SECRET, ENV_PLAYTEST_URL, ENV_PLAYTEST_TOKEN, ENV_COMMIT_HASH, ENV_COMMIT_TIME_ISO, ENV_BUILD_TIME_ISO */
 // Build-injected globals (exist when bundled)
 // Falls back to window.__DEV_MODE__ for unbundled dev
 const RUNTIME_CONFIG = (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__) || null;
@@ -37,6 +37,18 @@ const COMMIT_HASH_VALUE =
     (RUNTIME_CONFIG && typeof RUNTIME_CONFIG.commitHash === 'string' && RUNTIME_CONFIG.commitHash) ||
     (typeof ENV_COMMIT_HASH !== 'undefined' ? ENV_COMMIT_HASH : '');
 export const COMMIT_HASH = COMMIT_HASH_VALUE || 'dev';
+
+// Commit time (ISO 8601) - when the commit was created
+const COMMIT_TIME_VALUE =
+    (RUNTIME_CONFIG && typeof RUNTIME_CONFIG.commitTime === 'string' && RUNTIME_CONFIG.commitTime) ||
+    (typeof ENV_COMMIT_TIME_ISO !== 'undefined' ? ENV_COMMIT_TIME_ISO : '');
+export const COMMIT_TIME_ISO = COMMIT_TIME_VALUE || 'unknown';
+
+// Build time (ISO 8601) - when the bundle was built
+const BUILD_TIME_VALUE =
+    (RUNTIME_CONFIG && typeof RUNTIME_CONFIG.buildTime === 'string' && RUNTIME_CONFIG.buildTime) ||
+    (typeof ENV_BUILD_TIME_ISO !== 'undefined' ? ENV_BUILD_TIME_ISO : '');
+export const BUILD_TIME_ISO = BUILD_TIME_VALUE || 'unknown';
 
 // Playtest feedback configuration (from .env)
 export const PLAYTEST_CONFIG = PLAYTEST_URL ? {
