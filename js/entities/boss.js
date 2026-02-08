@@ -1,5 +1,5 @@
 import { scene } from '../core/scene.js';
-import { gameState } from '../core/gameState.js';
+import { gameState, getDifficultyConfig } from '../core/gameState.js';
 import { enemies, obstacles, hazardZones, tempVec3, getCurrentBoss, setCurrentBoss } from '../core/entities.js';
 import { player } from './player.js';
 import { spawnSpecificEnemy, spawnSplitEnemy } from './enemies.js';
@@ -7,7 +7,7 @@ import { BOSS_CONFIG, ABILITY_COOLDOWNS, ABILITY_TELLS } from '../config/bosses.
 import { HEART_HEAL, BOSS_STUCK_THRESHOLD, BOSS_STUCK_FRAMES, PHASE_TRANSITION_DELAY_FRAMES, GAME_TITLE, PHASE2_CUTSCENE, PHASE3_CUTSCENE, WAVE_STATE } from '../config/constants.js';
 import { TUNING } from '../config/tuning.js';
 import { spawnParticle, spawnShieldBreakVFX, spawnBubbleParticle } from '../effects/particles.js';
-import { spawnXpGem, spawnHeart, spawnArenaPortal, unfreezeBossEntrancePortal } from '../systems/pickups.js';
+import { spawnXpGem, spawnHeart, spawnArenaPortal, unfreezeBossEntrancePortal, collectAllXpGems } from '../systems/pickups.js';
 import { createHazardZone } from '../arena/generator.js';
 import { takeDamage, canTakeCollisionDamage, resetDamageCooldown } from '../systems/damage.js';
 import { showBossHealthBar, updateBossHealthBar, hideBossHealthBar, showExposedBanner, showPhaseAnnouncement, showBoss6CycleAnnouncement, updateBoss6CycleIndicator, hideBoss6CycleIndicator, showTutorialCallout, showChainIndicator, hideChainIndicator, showBoss6SequencePreview, hideBoss6SequencePreview } from '../ui/hud.js';
@@ -17,188 +17,183 @@ import { PulseMusic } from '../systems/pulseMusic.js';
 import { log, logOnce, logThrottled, assert } from '../systems/debugLog.js';
 import { incrementModuleCounter, tryLevelUpModule, getModuleLevel } from '../systems/moduleProgress.js';
 import { showModuleUnlockBanner } from '../ui/hud.js';
+import { createPorcupinefishMesh, createShieldfatherMesh } from './boss/bossMeshFactory.js';
 
 // Anti-stuck detection uses BOSS_STUCK_THRESHOLD and BOSS_STUCK_FRAMES from constants.js
 
-// ==================== PORCUPINEFISH MESH (Boss 1) ====================
-// Creates a porcupinefish-style mesh with body, spines, and eyes
-// Supports inflation state: 0 = deflated (streamlined swimmer), 1 = inflated (armored orb)
-
-function createPorcupinefishMesh(size, color) {
+// ==================== SHIELDFATHER MESH (Boss 2) ====================
+// Arena 2 boss uses a crab silhouette with an anemone crown (ties to Guardian Crab mechanic)
+function createShieldfatherMesh(size, color) {
     const group = new THREE.Group();
-    
-    // Main body - sphere that will be scaled for inflation states
-    const bodyGeom = new THREE.SphereGeometry(size, 24, 24);
+
     const bodyMat = new THREE.MeshStandardMaterial({
         color: color,
         emissive: color,
         emissiveIntensity: 0.5
     });
+
+    // Main body (carapace) - wide, flattened sphere
+    const bodyGeom = new THREE.SphereGeometry(size, 20, 20);
     const body = new THREE.Mesh(bodyGeom, bodyMat);
+    body.scale.set(1.4, 0.6, 1.55);
     body.castShadow = true;
-    body.name = 'pufferBody';
+    body.name = 'crabBody';
+    body.userData.basePosition = body.position.clone();
     group.add(body);
-    
-    // Glow effect
-    const glowGeom = new THREE.SphereGeometry(size * 1.15, 16, 16);
+
+    // Glow halo
+    const glowGeom = new THREE.SphereGeometry(size * 1.2, 16, 16);
     const glowMat = new THREE.MeshBasicMaterial({
         color: color,
         transparent: true,
         opacity: 0.25
     });
     const glow = new THREE.Mesh(glowGeom, glowMat);
-    glow.name = 'pufferGlow';
+    glow.scale.copy(body.scale);
+    glow.name = 'crabGlow';
+    glow.userData.basePosition = glow.position.clone();
     group.add(glow);
-    
-    // Eyes - two small spheres on the front
-    const eyeGeom = new THREE.SphereGeometry(size * 0.15, 12, 12);
+
+    // Eyes + stalks
+    const stalkGeom = new THREE.ConeGeometry(size * 0.12, size * 0.8, 6);
+    const stalkMat = new THREE.MeshStandardMaterial({ color: 0x222233 });
+    const eyeGeom = new THREE.SphereGeometry(size * 0.16, 10, 10);
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const pupilGeom = new THREE.SphereGeometry(size * 0.08, 8, 8);
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    
-    // Left eye
-    const leftEye = new THREE.Group();
-    const leftEyeWhite = new THREE.Mesh(eyeGeom, eyeMat);
-    const leftPupil = new THREE.Mesh(pupilGeom, pupilMat);
-    leftPupil.position.z = size * 0.08;
-    leftEye.add(leftEyeWhite);
-    leftEye.add(leftPupil);
-    leftEye.position.set(-size * 0.4, size * 0.3, size * 0.75);
+
+    const leftStalk = new THREE.Mesh(stalkGeom, stalkMat);
+    leftStalk.position.set(-size * 0.55, size * 0.65, size * 0.8);
+    leftStalk.name = 'leftEyeStalk';
+    group.add(leftStalk);
+    const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+    leftEye.position.set(-size * 0.55, size * 1.0, size * 0.85);
     leftEye.name = 'leftEye';
     group.add(leftEye);
-    
-    // Right eye
-    const rightEye = new THREE.Group();
-    const rightEyeWhite = new THREE.Mesh(eyeGeom, eyeMat.clone());
-    const rightPupil = new THREE.Mesh(pupilGeom, pupilMat.clone());
-    rightPupil.position.z = size * 0.08;
-    rightEye.add(rightEyeWhite);
-    rightEye.add(rightPupil);
-    rightEye.position.set(size * 0.4, size * 0.3, size * 0.75);
+
+    const rightStalk = new THREE.Mesh(stalkGeom, stalkMat);
+    rightStalk.position.set(size * 0.55, size * 0.65, size * 0.8);
+    rightStalk.name = 'rightEyeStalk';
+    group.add(rightStalk);
+    const rightEye = new THREE.Mesh(eyeGeom, eyeMat.clone());
+    rightEye.position.set(size * 0.55, size * 1.0, size * 0.85);
     rightEye.name = 'rightEye';
     group.add(rightEye);
-    
-    // Mouth - small dark ellipse
-    const mouthGeom = new THREE.SphereGeometry(size * 0.12, 8, 8);
-    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x331111 });
+
+    // Mouth
+    const mouthGeom = new THREE.SphereGeometry(size * 0.18, 10, 10);
+    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x221111 });
     const mouth = new THREE.Mesh(mouthGeom, mouthMat);
-    mouth.scale.set(1.5, 0.6, 0.5);
-    mouth.position.set(0, -size * 0.1, size * 0.9);
+    mouth.scale.set(1.8, 0.6, 0.6);
+    mouth.position.set(0, -size * 0.1, size * 1.0);
     mouth.name = 'mouth';
     group.add(mouth);
-    
-    // Tail fin - small cone at the back
-    const tailGeom = new THREE.ConeGeometry(size * 0.3, size * 0.6, 4);
-    const tailMat = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color,
-        emissiveIntensity: 0.3
-    });
-    const tail = new THREE.Mesh(tailGeom, tailMat);
-    tail.rotation.x = Math.PI / 2;
-    tail.position.set(0, 0, -size * 1.1);
-    tail.name = 'tail';
-    group.add(tail);
-    
-    // Side fins - small triangular planes
-    const finGeom = new THREE.ConeGeometry(size * 0.25, size * 0.5, 3);
-    const finMat = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color,
-        emissiveIntensity: 0.3,
-        side: THREE.DoubleSide
-    });
-    
-    const leftFin = new THREE.Mesh(finGeom, finMat);
-    leftFin.rotation.z = Math.PI / 2;
-    leftFin.rotation.y = -0.3;
-    leftFin.position.set(-size * 0.9, 0, size * 0.2);
-    leftFin.name = 'leftFin';
-    group.add(leftFin);
-    
-    const rightFin = new THREE.Mesh(finGeom, finMat.clone());
-    rightFin.rotation.z = -Math.PI / 2;
-    rightFin.rotation.y = 0.3;
-    rightFin.position.set(size * 0.9, 0, size * 0.2);
-    rightFin.name = 'rightFin';
-    group.add(rightFin);
-    
-    // Spines - distributed using icosahedron vertices for even distribution
-    // Create 20 spines (icosahedron has 12 vertices, but we use more for coverage)
-    const spineGroup = new THREE.Group();
-    spineGroup.name = 'spines';
-    
-    const spineGeom = new THREE.ConeGeometry(size * 0.08, size * 0.5, 4);
-    const spineMat = new THREE.MeshStandardMaterial({
-        color: 0xffaa44,  // Orange-yellow spines
-        emissive: 0xff6600,
-        emissiveIntensity: 0.3
-    });
-    
-    // Generate spine positions using golden spiral for even distribution
-    const spineCount = 24;
-    const goldenRatio = (1 + Math.sqrt(5)) / 2;
-    
-    for (let i = 0; i < spineCount; i++) {
-        const spine = new THREE.Mesh(spineGeom, spineMat.clone());
-        
-        // Golden spiral distribution on sphere
-        const theta = 2 * Math.PI * i / goldenRatio;
-        const phi = Math.acos(1 - 2 * (i + 0.5) / spineCount);
-        
-        // Position on unit sphere
-        const x = Math.sin(phi) * Math.cos(theta);
-        const y = Math.sin(phi) * Math.sin(theta);
-        const z = Math.cos(phi);
-        
-        // Place spine at surface
-        spine.position.set(x * size, y * size, z * size);
-        
-        // Point outward from center
-        spine.lookAt(spine.position.clone().multiplyScalar(2));
-        spine.rotateX(Math.PI / 2);  // Cone points outward
-        
-        // Store base scale for animation
-        spine.userData.baseScale = 1.0;
-        spine.userData.index = i;
-        
-        // Start hidden (deflated state)
-        spine.scale.set(0.1, 0.1, 0.1);
-        spine.visible = false;
-        
-        spineGroup.add(spine);
-    }
-    
-    group.add(spineGroup);
-    
-    // Dorsal fin (top ridge) - visible in deflated state
-    const dorsalGeom = new THREE.ConeGeometry(size * 0.15, size * 0.4, 3);
-    const dorsalMat = new THREE.MeshStandardMaterial({
+
+    // Mega claws
+    const clawGeom = new THREE.SphereGeometry(size * 0.75, 12, 12);
+    const clawMat = new THREE.MeshStandardMaterial({
         color: color,
         emissive: color,
         emissiveIntensity: 0.4
     });
-    
-    const dorsalGroup = new THREE.Group();
-    dorsalGroup.name = 'dorsalFin';
-    for (let i = 0; i < 3; i++) {
-        const dorsal = new THREE.Mesh(dorsalGeom, dorsalMat.clone());
-        dorsal.position.set(0, size * 0.8, -size * 0.3 + i * size * 0.3);
-        dorsal.scale.set(1, 1 - i * 0.2, 1);
-        dorsalGroup.add(dorsal);
-    }
-    group.add(dorsalGroup);
-    
-    // Store references for easy access
-    group.pufferBody = body;
-    group.pufferBodyMat = bodyMat;
-    group.pufferGlow = glow;
-    group.pufferSpines = spineGroup;
-    group.pufferEyes = [leftEye, rightEye];
-    group.pufferTail = tail;
-    group.pufferFins = [leftFin, rightFin];
-    group.pufferDorsal = dorsalGroup;
-    
+    const leftClaw = new THREE.Mesh(clawGeom, clawMat);
+    leftClaw.scale.set(1.6, 0.6, 1.0);
+    leftClaw.position.set(-size * 1.6, size * 0.05, size * 0.7);
+    leftClaw.name = 'leftClaw';
+    leftClaw.userData.baseScale = leftClaw.scale.clone();
+    leftClaw.userData.basePosition = leftClaw.position.clone();
+    group.add(leftClaw);
+
+    const rightClaw = new THREE.Mesh(clawGeom, clawMat.clone());
+    rightClaw.scale.set(1.6, 0.6, 1.0);
+    rightClaw.position.set(size * 1.6, size * 0.05, size * 0.7);
+    rightClaw.name = 'rightClaw';
+    rightClaw.userData.baseScale = rightClaw.scale.clone();
+    rightClaw.userData.basePosition = rightClaw.position.clone();
+    group.add(rightClaw);
+
+    // Claw tips (cones)
+    const tipGeom = new THREE.ConeGeometry(size * 0.2, size * 0.6, 6);
+    const tipMat = new THREE.MeshStandardMaterial({ color: 0xffddaa });
+    const leftTip = new THREE.Mesh(tipGeom, tipMat);
+    leftTip.rotation.x = Math.PI / 2;
+    leftTip.position.set(-size * 2.25, size * 0.05, size * 0.9);
+    leftTip.name = 'leftClawTip';
+    group.add(leftTip);
+    const rightTip = new THREE.Mesh(tipGeom, tipMat.clone());
+    rightTip.rotation.x = Math.PI / 2;
+    rightTip.position.set(size * 2.25, size * 0.05, size * 0.9);
+    rightTip.name = 'rightClawTip';
+    group.add(rightTip);
+
+    // Legs - 6 cones angled outward
+    const legGeom = new THREE.ConeGeometry(size * 0.12, size * 0.7, 6);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x222233 });
+    const legsGroup = new THREE.Group();
+    legsGroup.name = 'legs';
+    const legOffsets = [
+        { x: -1.3, z: 0.2, rotZ: 0.7 },
+        { x: -1.1, z: -0.4, rotZ: 0.6 },
+        { x: -0.9, z: -0.9, rotZ: 0.5 },
+        { x: 1.3, z: 0.2, rotZ: -0.7 },
+        { x: 1.1, z: -0.4, rotZ: -0.6 },
+        { x: 0.9, z: -0.9, rotZ: -0.5 }
+    ];
+    legOffsets.forEach((offset, index) => {
+        const leg = new THREE.Mesh(legGeom, legMat);
+        leg.position.set(size * offset.x, -size * 0.2, size * offset.z);
+        leg.rotation.x = Math.PI / 2;
+        leg.rotation.z = offset.rotZ;
+        leg.name = `leg_${index}`;
+        legsGroup.add(leg);
+    });
+    group.add(legsGroup);
+
+    // Anemone crown
+    const crownGroup = new THREE.Group();
+    crownGroup.name = 'anemoneCrown';
+    const crownBaseGeom = new THREE.SphereGeometry(size * 0.35, 10, 10);
+    const crownBaseMat = new THREE.MeshStandardMaterial({
+        color: 0x6688ff,
+        emissive: 0x4466ff,
+        emissiveIntensity: 0.8
+    });
+    const crownBase = new THREE.Mesh(crownBaseGeom, crownBaseMat);
+    crownBase.position.set(0, size * 0.8, -size * 0.05);
+    crownBase.name = 'anemoneBase';
+    crownBase.userData.basePosition = crownBase.position.clone();
+    crownGroup.add(crownBase);
+
+    const tendrilGeom = new THREE.ConeGeometry(size * 0.12, size * 0.8, 7);
+    const tendrilMat = new THREE.MeshStandardMaterial({
+        color: 0x6688ff,
+        emissive: 0x4466ff,
+        emissiveIntensity: 0.9
+    });
+    const crownOffsets = [
+        { x: -0.2, z: 0.05, rotZ: 0.25 },
+        { x: 0.2, z: 0.05, rotZ: -0.25 },
+        { x: 0.0, z: 0.25, rotZ: 0.0 },
+        { x: 0.0, z: -0.15, rotZ: 0.1 }
+    ];
+    crownOffsets.forEach((offset, index) => {
+        const tendril = new THREE.Mesh(tendrilGeom, tendrilMat.clone());
+        tendril.position.set(size * offset.x, size * 1.2, size * offset.z);
+        tendril.rotation.z = offset.rotZ;
+        tendril.name = `anemoneTendril_${index}`;
+        tendril.userData.baseScale = tendril.scale.clone();
+        tendril.userData.basePosition = tendril.position.clone();
+        crownGroup.add(tendril);
+    });
+    group.add(crownGroup);
+
+    // Store references for animation
+    group.crabBody = body;
+    group.crabBodyMat = bodyMat;
+    group.crabGlow = glow;
+    group.leftClaw = leftClaw;
+    group.rightClaw = rightClaw;
+    group.anemoneCrown = crownGroup;
+    group.legs = legsGroup;
+
     return group;
 }
 
@@ -285,7 +280,7 @@ function animatePorcupinefishSpines(boss, deltaTime) {
     if (!boss.isPorcupinefish || !boss.pufferSpines) return;
     
     const spines = boss.pufferSpines;
-    const time = Date.now() * 0.001;
+    const time = gameState.time?.simSeconds ?? 0;
     
     // Only animate when inflated
     if (boss.inflationState < 0.5) return;
@@ -362,6 +357,51 @@ function applyChaseBreathing(boss) {
     boss.targetInflation = breathCycle;  // Pulses 0.0 to 0.3
 }
 
+function animateShieldfather(boss) {
+    if (!boss.isShieldfather) return;
+    const t = boss.aiTimer;
+
+    // Subtle body bob
+    const bob = Math.sin(t * 0.04) * 0.15;
+    if (boss.crabBody?.userData?.basePosition) {
+        const base = boss.crabBody.userData.basePosition;
+        boss.crabBody.position.y = base.y + bob;
+    }
+    if (boss.crabGlow?.userData?.basePosition) {
+        const base = boss.crabGlow.userData.basePosition;
+        boss.crabGlow.position.y = base.y + bob * 0.8;
+    }
+
+    // Claw sway + subtle open/close pulse
+    const clawPulse = 1 + Math.sin(t * 0.08) * 0.05;
+    const clawSpread = 1 + Math.sin(t * 0.05) * 0.05;
+    if (boss.leftClaw?.userData?.baseScale && boss.leftClaw?.userData?.basePosition) {
+        const baseScale = boss.leftClaw.userData.baseScale;
+        const basePos = boss.leftClaw.userData.basePosition;
+        boss.leftClaw.scale.set(baseScale.x, baseScale.y * clawPulse, baseScale.z);
+        boss.leftClaw.position.x = basePos.x * clawSpread;
+    }
+    if (boss.rightClaw?.userData?.baseScale && boss.rightClaw?.userData?.basePosition) {
+        const baseScale = boss.rightClaw.userData.baseScale;
+        const basePos = boss.rightClaw.userData.basePosition;
+        boss.rightClaw.scale.set(baseScale.x, baseScale.y * clawPulse, baseScale.z);
+        boss.rightClaw.position.x = basePos.x * clawSpread;
+    }
+
+    // Anemone tendril wave (extra flare during summon)
+    const summonBoost = boss.aiState === 'summon' ? 1.35 : 1.0;
+    if (boss.anemoneTendrils?.length) {
+        boss.anemoneTendrils.forEach((tendril, index) => {
+            const base = tendril.userData?.baseScale;
+            const basePos = tendril.userData?.basePosition;
+            if (!base || !basePos) return;
+            const tendrilPulse = 1 + Math.sin(t * 0.12 + index) * 0.2;
+            tendril.scale.set(base.x, base.y * tendrilPulse * summonBoost, base.z);
+            tendril.position.y = basePos.y + Math.sin(t * 0.08 + index) * 0.1;
+        });
+    }
+}
+
 export function spawnBoss(arenaNumber) {
     const config = BOSS_CONFIG[Math.min(arenaNumber, 6)];
     const boss = new THREE.Group();
@@ -413,6 +453,31 @@ export function spawnBoss(arenaNumber) {
         
         // Body material reference for standard boss systems
         boss.bodyMaterial = boss.pufferBodyMat;
+    } else if (arenaNumber === 2) {
+        // Boss 2 (THE SHIELDFATHER) uses crab mesh
+        const crabMesh = createShieldfatherMesh(config.size, config.color);
+
+        crabMesh.children.forEach(child => {
+            boss.add(child.clone());
+        });
+
+        boss.isShieldfather = true;
+        boss.crabBody = boss.children.find(c => c.name === 'crabBody');
+        boss.crabBodyMat = boss.crabBody?.material;
+        boss.crabGlow = boss.children.find(c => c.name === 'crabGlow');
+        boss.leftClaw = boss.children.find(c => c.name === 'leftClaw');
+        boss.rightClaw = boss.children.find(c => c.name === 'rightClaw');
+        boss.leftEyeStalk = boss.children.find(c => c.name === 'leftEyeStalk');
+        boss.rightEyeStalk = boss.children.find(c => c.name === 'rightEyeStalk');
+        boss.leftEye = boss.children.find(c => c.name === 'leftEye');
+        boss.rightEye = boss.children.find(c => c.name === 'rightEye');
+        boss.mouth = boss.children.find(c => c.name === 'mouth');
+        boss.legs = boss.children.find(c => c.name === 'legs');
+        boss.anemoneCrown = boss.children.find(c => c.name === 'anemoneCrown');
+        boss.anemoneTendrils = boss.anemoneCrown?.children?.filter(child => child.name?.startsWith('anemoneTendril')) || [];
+
+        // Body material reference for standard boss systems
+        boss.bodyMaterial = boss.crabBodyMat;
     } else {
         // Standard boss mesh for other bosses
         const bodyMat = new THREE.MeshStandardMaterial({
@@ -652,6 +717,7 @@ export function initiateRetreat(boss) {
     boss.retreatAnimTimer = 0;
     boss.retreatAnimDuration = 60;  // 1 second animation
     boss.aiState = 'retreating';  // Override AI state
+    boss.retreatWarningShown = false;  // Reset warning flag for next encounter
     
     // Save persistent HP for next encounter
     if (gameState.arena1ChaseState) {
@@ -700,7 +766,15 @@ export function initiateRetreat(boss) {
 
 // Clear all charge trails from a boss (prevents ghost damage after death/retreat)
 function clearChargeTrails(boss) {
-    if (!boss || !boss.chargeTrails || boss.chargeTrails.length === 0) return;
+    if (!boss) return;
+    
+    // Clear the red charge-path telegraph marker (can linger if boss dies/cutscene during wind-up)
+    if (boss.chargeMarker) {
+        cleanupVFX(boss.chargeMarker);
+        boss.chargeMarker = null;
+    }
+    
+    if (!boss.chargeTrails || boss.chargeTrails.length === 0) return;
     
     const trailCount = boss.chargeTrails.length;
     for (const trail of boss.chargeTrails) {
@@ -770,6 +844,24 @@ export function checkBossRetreat(boss) {
         canRetreat: boss.canRetreat
     });
     
+    // Enhanced retreat telegraph: warn when close to threshold (within 5% HP)
+    const healthPercent = boss.health / boss.maxHealth;
+    const threshold = boss.retreatThreshold / boss.maxHealth;
+    const retreatWarningThreshold = threshold + 0.05; // 5% above retreat threshold
+    
+    if (healthPercent < retreatWarningThreshold && healthPercent >= threshold && !boss.retreatWarningShown) {
+        boss.retreatWarningShown = true;
+        // Visual warning: pulsing glow and screen flash
+        triggerScreenFlash(0xffff44, 4); // Yellow warning flash
+        showTutorialCallout('retreat-warning', 'BOSS NEARLY DEFEATED!', 2000);
+        // Audio cue
+        PulseMusic.onBossExposed?.();
+        // Make boss glow more intensely to signal retreat is imminent
+        if (boss.bodyMaterial) {
+            boss.bodyMaterial.emissiveIntensity = 1.2;
+        }
+    }
+    
     // Check if HP BELOW retreat threshold (not equal - prevents immediate re-retreat on spawn)
     if (boss.health < boss.retreatThreshold) {
         // Floor HP at threshold (don't go below)
@@ -784,6 +876,14 @@ export function checkBossRetreat(boss) {
 export function updateBoss() {
     // ==================== POST-DEFEAT TIMERS (run even without boss) ====================
     // These use gameState since boss is removed after defeat
+    
+    // XP vacuum delay after boss defeat (collect all gems before portal spawns)
+    if (gameState.xpVacuumTimer > 0) {
+        gameState.xpVacuumTimer--;
+        if (gameState.xpVacuumTimer <= 0) {
+            collectAllXpGems();
+        }
+    }
     
     // Portal spawn delay after boss defeat
     if (gameState.portalSpawnTimer > 0) {
@@ -809,6 +909,11 @@ export function updateBoss() {
     
     const boss = currentBoss;
     boss.aiTimer++;
+
+    // Shieldfather idle/ability visuals (Arena 2 boss mesh)
+    if (boss.isShieldfather) {
+        animateShieldfather(boss);
+    }
     
     // ==================== ARENA 1 CHASE: ENTRANCE INVULNERABILITY ====================
     // Boss can't damage player during entrance animation
@@ -1393,7 +1498,7 @@ function isTopLethalityAbility(boss, ability) {
     // Top lethality moves per boss (blocked during Phase 3 shielded state)
     const topLethality = {
         1: 'charge',      // Red Puffer King's charge
-        2: 'jumpSlam',    // Monolith's slam
+        2: 'jumpSlam',    // Shieldfather's slam
         3: 'teleport',    // Ascendant's teleport
         4: 'growth',      // Overgrowth's growth
         5: 'burrow',      // Burrower's burrow
@@ -1470,7 +1575,7 @@ function updateBossAI(boss) {
         // Slow orbit around player instead of attacking
         const orbitSpeed = 0.02;
         const orbitDist = 10;
-        const angle = Date.now() * 0.001;
+        const angle = gameState.time?.simSeconds ?? 0;
         const targetX = player.position.x + Math.cos(angle) * orbitDist;
         const targetZ = player.position.z + Math.sin(angle) * orbitDist;
         
@@ -1679,7 +1784,7 @@ function updateComboVFX(boss) {
     
     // Phase 3 stance pulse
     if (boss.comboStanceActive && boss.bodyMaterial) {
-        const pulse = 0.7 + 0.2 * Math.sin(Date.now() * 0.01);
+        const pulse = 0.7 + 0.2 * Math.sin((gameState.time?.simSeconds ?? 0) * 10);
         boss.bodyMaterial.emissiveIntensity = pulse;
     }
 }
@@ -1933,9 +2038,9 @@ function updateBoss6Color(boss) {
     boss.bodyMaterial.color.setHex(lerpedColor);
     boss.bodyMaterial.emissive.setHex(lerpedColor);
     
-    // Update glow mesh color too (child index 1)
-    if (boss.children[1] && boss.children[1].material) {
-        boss.children[1].material.color.setHex(lerpedColor);
+    // Update glow mesh color too (use named ref)
+    if (boss.pufferGlow && boss.pufferGlow.material) {
+        boss.pufferGlow.material.color.setHex(lerpedColor);
     }
 }
 
@@ -2058,7 +2163,8 @@ export function prepareBossForCutscene(boss) {
     // Clear any active abilities/charges
     boss.chargeDirection = null;
     boss.chargeDirLocked = false;
-    boss.chargeMarker = null;
+    // Clear charge trails and telegraph marker (prevents lingering VFX in next arena)
+    clearChargeTrails(boss);
     
     // Move boss to safe cutscene position (arena center-back)
     const config = BOSS_CONFIG[gameState.currentArena];
@@ -2191,7 +2297,10 @@ export function spawnIntroMinions(boss, count = 3) {
 
 function startAbility(boss, ability) {
     boss.aiTimer = 0;
-    boss.abilityCooldowns[ability] = ABILITY_COOLDOWNS[ability];
+    // Apply phase-specific cooldown multiplier (longer cooldowns in early phases for teaching)
+    // Phase 1: 1.5x (slower, more readable), Phase 2: 1.2x, Phase 3: 1.0x (normal)
+    const phaseCooldownMult = boss.phase === 1 ? 1.5 : boss.phase === 2 ? 1.2 : 1.0;
+    boss.abilityCooldowns[ability] = Math.floor(ABILITY_COOLDOWNS[ability] * phaseCooldownMult);
     
     switch (ability) {
         case 'charge':
@@ -2666,6 +2775,10 @@ function continueCurrentAbility(boss) {
                     if (gameState.currentArena === 1) {
                         // Arena 1: Only grunts (what player has learned)
                         enemyType = 'grunt';
+                    } else if (gameState.currentArena === 2) {
+                        // Arena 2: Mix of grunts + Guardian Crabs (teaches target priority during boss)
+                        // ~30% chance to spawn a Warden among minions
+                        enemyType = (i === 0 || Math.random() < 0.3) ? 'shielded' : 'grunt';
                     } else if (boss.abilities.teleport && Math.random() < 0.3) {
                         // Later arenas with teleport: chance to spawn teleporters
                         enemyType = 'teleporter';
@@ -2750,12 +2863,12 @@ function continueCurrentAbility(boss) {
                 boss.aiTimer = 0;
                 boss.bodyMaterial.emissiveIntensity = 0.5;
                 // Damage nearby player
-                if (player.position.distanceTo(boss.position) < 6) {
+                if (!boss.introPreviewOnly && player.position.distanceTo(boss.position) < 6) {
                     const config = BOSS_CONFIG[gameState.currentArena];
                     takeDamage(boss.damage * 0.6, `${config?.name || 'Boss'} - Jump Slam`, 'boss');
                 }
                 // Create hazard if boss has hazards ability (respects hazard budget)
-                if (boss.abilities.hazards && canCreateMoreHazards(4)) {
+                if (!boss.introPreviewOnly && boss.abilities.hazards && canCreateMoreHazards(4)) {
                     createHazardZone(boss.position.x, boss.position.z, 4, 400);
                 }
                 spawnParticle(boss.position, boss.baseColor, 25);
@@ -2777,8 +2890,8 @@ function continueCurrentAbility(boss) {
                 const placedPositions = [];
                 const radius = 2 + boss.phase * 0.5;
                 
-                // Monolith P2+: Lane hazards (grid-aligned)
-                const isMonolithP2 = gameState.currentArena === 2 && boss.phase >= 2;
+                // Shieldfather P2+: Lane hazards (grid-aligned)
+                const isShieldfatherP2 = gameState.currentArena === 2 && boss.phase >= 2;
                 
                 for (let i = 0; i < hazardCount; i++) {
                     let hazardPos = null;
@@ -2788,7 +2901,7 @@ function continueCurrentAbility(boss) {
                     while (!hazardPos && attempts < 10) {
                         let testPos;
                         
-                        if (isMonolithP2) {
+                        if (isShieldfatherP2) {
                             // Lane-based placement: snap to grid lines
                             const laneSpacing = 10;
                             const lanes = [-20, -10, 0, 10, 20];
@@ -2842,8 +2955,8 @@ function continueCurrentAbility(boss) {
                     }
                 }
                 
-                // Monolith P3: Mark existing hazards for detonation
-                if (gameState.currentArena === 2 && boss.phase >= 3) {
+                // Shieldfather P3: Mark existing hazards for detonation
+                if (!boss.introPreviewOnly && gameState.currentArena === 2 && boss.phase >= 3) {
                     boss.detonationPending = true;
                     boss.detonationTimer = 90; // 1.5 second warning
                     // Store references to existing hazards for detonation
@@ -2856,7 +2969,7 @@ function continueCurrentAbility(boss) {
                 boss.hazardPreviews.forEach(hp => updateHazardPreviewCircle(hp.preview));
             }
             
-            // Monolith P3: Update detonation warning VFX
+            // Shieldfather P3: Update detonation warning VFX
             if (boss.detonationPending && boss.detonationWarnings) {
                 const progress = 1 - (boss.detonationTimer / 90);
                 boss.detonationWarnings.forEach(vfx => updateDetonationWarningVFX(vfx, progress));
@@ -2864,6 +2977,22 @@ function continueCurrentAbility(boss) {
             
             // Spawn actual hazards (respects hazard budget)
             if (boss.aiTimer === Math.floor(tellDuration.hazards)) {
+                if (boss.introPreviewOnly) {
+                    if (boss.hazardPreviews) {
+                        boss.hazardPreviews.forEach(hp => cleanupVFX(hp.preview));
+                        boss.hazardPreviews = null;
+                    }
+                    // Ensure no pending detonation state carries into combat
+                    boss.detonationPending = false;
+                    boss.detonationTargets = null;
+                    if (boss.detonationWarnings) {
+                        boss.detonationWarnings.forEach(vfx => cleanupVFX(vfx));
+                        boss.detonationWarnings = null;
+                    }
+                    boss.aiState = 'idle';
+                    boss.aiTimer = 0;
+                    break;
+                }
                 if (boss.hazardPreviews) {
                     boss.hazardPreviews.forEach(hp => {
                         // Only create hazard if within budget
@@ -2875,7 +3004,7 @@ function continueCurrentAbility(boss) {
                     boss.hazardPreviews = null;
                 }
                 
-                // Monolith P3: Create detonation warnings for existing hazards
+                // Shieldfather P3: Create detonation warnings for existing hazards
                 if (boss.detonationPending && boss.detonationTargets) {
                     boss.detonationWarnings = [];
                     for (const hazard of boss.detonationTargets) {
@@ -2893,7 +3022,7 @@ function continueCurrentAbility(boss) {
                 }
             }
             
-            // Monolith P3: Execute detonation
+            // Shieldfather P3: Execute detonation
             if (boss.detonationPending && boss.detonationTimer !== undefined) {
                 boss.detonationTimer--;
                 
@@ -4589,11 +4718,14 @@ function isPointNearWall(px, pz, wallX, wallZ, halfLength, wallAngle) {
 function getTellDuration(boss) {
     const phaseKey = `phase${boss.phase}`;
     const tells = {};
-    const telegraphMultRaw = Number(TUNING.telegraphDurationMult ?? 1.0);
-    const telegraphMult = Math.max(0.5, Math.min(2.0, telegraphMultRaw || 1.0));
+    // Combine TUNING multiplier (debug lever) with difficulty multiplier
+    const tuningMultRaw = Number(TUNING.telegraphDurationMult ?? 1.0);
+    const tuningMult = Math.max(0.5, Math.min(2.0, tuningMultRaw || 1.0));
+    const diffConfig = getDifficultyConfig();
+    const combinedMult = tuningMult * diffConfig.telegraphMult;
     for (const [ability, durations] of Object.entries(ABILITY_TELLS)) {
         const base = durations[phaseKey] || durations.phase1;
-        tells[ability] = Math.max(1, Math.round(base * telegraphMult));
+        tells[ability] = Math.max(1, Math.round(base * combinedMult));
     }
     return tells;
 }
@@ -5059,12 +5191,58 @@ export function killBoss() {
     if (!currentBoss || currentBoss.isDying) return;
     currentBoss.isDying = true;
     
+    // ==================== COMPREHENSIVE VFX CLEANUP ====================
+    // Belt-and-suspenders: clear ALL boss-owned VFX to prevent lingering visuals/damage
+    
     // Clear charge trails on death to prevent ghost damage
     clearChargeTrails(currentBoss);
     
     // Cleanup combo VFX if active
     if (currentBoss.comboActive) {
         endComboVFX(currentBoss);
+    }
+    
+    // Clear vine zones (Overgrowth boss)
+    if (currentBoss.vineZones && currentBoss.vineZones.length > 0) {
+        for (const zone of currentBoss.vineZones) {
+            cleanupVFX(zone);
+        }
+        currentBoss.vineZones.length = 0;
+    }
+    
+    // Clear wall impact VFX
+    if (currentBoss.wallImpactVFX) {
+        cleanupVFX(currentBoss.wallImpactVFX);
+        currentBoss.wallImpactVFX = null;
+    }
+    
+    // Clear wall previews (lane wall telegraph markers)
+    if (currentBoss.wallPreviews && currentBoss.wallPreviews.length > 0) {
+        for (const preview of currentBoss.wallPreviews) {
+            cleanupVFX(preview);
+        }
+        currentBoss.wallPreviews.length = 0;
+    }
+    
+    // Belt-and-suspenders: sweep scene and hazardZones for any stray isDamageZone objects
+    // (catches trails that may have lost their boss reference)
+    const strayDamageZones = [];
+    scene.traverse(obj => {
+        if (obj.isDamageZone && obj !== currentBoss) {
+            strayDamageZones.push(obj);
+        }
+    });
+    for (const zone of strayDamageZones) {
+        cleanupVFX(zone);
+    }
+    
+    // Also sweep hazardZones array for any trail-related damage zones
+    for (let i = hazardZones.length - 1; i >= 0; i--) {
+        const hz = hazardZones[i];
+        if (hz.isDamageZone && hz.bossRef === currentBoss) {
+            cleanupVFX(hz);
+            hazardZones.splice(i, 1);
+        }
     }
     
     // Track boss defeat for combat stats
@@ -5166,6 +5344,10 @@ export function killBoss() {
     hideBoss6CycleIndicator();
     gameState.kills++;
     gameState.score += isFinalBoss ? 2000 : 750;  // Extra score for final boss
+    
+    // Hard vacuum: collect all remaining XP gems so portal can't overlap them
+    // Small delay to let the boss XP gems spawn visually first, then collect all at once
+    gameState.xpVacuumTimer = 60;  // 1 second at 60fps — collect before portal spawns
     
     // Spawn arena portal after boss death (not for final boss - game ends there)
     if (!isFinalBoss) {

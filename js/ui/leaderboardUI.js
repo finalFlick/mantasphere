@@ -34,11 +34,17 @@ export function showLeaderboard() {
             const safeName = entry.name.replace(/[<>&"']/g, c => 
                 ({'<':'&lt;', '>':'&gt;', '&':'&amp;', '"':'&quot;', "'":'&#39;'})[c]);
             
+            // Difficulty badge (fallback to 'normal' for old entries)
+            const difficulty = entry.difficulty || 'normal';
+            const diffLabels = { easy: 'E', normal: 'N', hard: 'H', nightmare: 'NM' };
+            const diffLabel = diffLabels[difficulty] || 'N';
+            
             row.innerHTML = `
                 <span class="lb-rank">#${index + 1}</span>
                 <span class="lb-name">${safeName}</span>
                 <span class="lb-score">${entry.score.toLocaleString()}</span>
                 <span class="lb-arena">A${entry.arena}-W${entry.wave}</span>
+                <span class="lb-difficulty" title="${difficulty.toUpperCase()}">${diffLabel}</span>
                 <span class="lb-badges">${badgeIcons}</span>
                 <span class="lb-time">${formatTime(entry.time)}</span>
             `;
@@ -55,7 +61,7 @@ export function hideLeaderboard() {
 }
 
 // Show high score entry form
-export function showHighScoreEntry(score, arena, wave, level, time, onSubmit) {
+export function showHighScoreEntry(score, arena, wave, level, time, difficulty = 'normal', onSubmit) {
     const rank = getScoreRank(score);
     
     document.getElementById('hs-rank').textContent = '#' + rank;
@@ -75,7 +81,7 @@ export function showHighScoreEntry(score, arena, wave, level, time, onSubmit) {
     
     const handleSubmit = () => {
         const name = input.value.trim() || 'AAA';
-        const position = addScore(name, score, arena, wave, level, time);
+        const position = addScore(name, score, arena, wave, level, time, difficulty);
         hideHighScoreEntry();
         if (onSubmit) onSubmit(position);
     };

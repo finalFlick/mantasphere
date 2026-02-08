@@ -1,9 +1,10 @@
-import { gameState } from '../core/gameState.js';
+import { gameState, getDifficultyConfig } from '../core/gameState.js';
 import { enemies, getCurrentBoss, setCurrentBoss } from '../core/entities.js';
 import { player } from '../entities/player.js';
 import { spawnWaveEnemy } from '../entities/enemies.js';
 import { spawnBoss, spawnIntroMinions, triggerDemoAbility, endDemoMode, prepareBossForCutscene, endCutsceneAndRepositionPlayer } from '../entities/boss.js';
-import { clearAllPickups, updateArenaPortal, clearArenaPortal, spawnBossEntrancePortal, freezeBossEntrancePortal, updateBossEntrancePortal } from './pickups.js';
+import { clearProjectiles } from './projectiles.js';
+import { updateArenaPortal, clearArenaPortal, spawnBossEntrancePortal, freezeBossEntrancePortal, updateBossEntrancePortal, maybeSpawnChest } from './pickups.js';
 import { WAVE_STATE, WAVE_CONFIG, ENEMY_CAPS, THREAT_BUDGET, PACING_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, BOSS_INTRO_CINEMATIC_DURATION, BOSS_INTRO_SLOWMO_DURATION, BOSS_INTRO_SLOWMO_SCALE, BOSS1_INTRO_DEMO, BOSS_INTRO_TOTAL_DURATION, SPAWN_CHOREOGRAPHY, CINEMATIC_BOSS_HOLD_FRAMES } from '../config/constants.js';
 import { ARENA_CONFIG, getArenaWaves } from '../config/arenas.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
@@ -26,6 +27,7 @@ import {
 } from '../ui/hud.js';
 import { showFeedbackOverlay, isFeedbackEnabled } from './playtestFeedback.js';
 import { scene } from '../core/scene.js';
+import { spawnParticle } from '../effects/particles.js';
 import { startCinematic, triggerSlowMo, triggerScreenFlash, endCinematic, shortenCinematic } from './visualFeedback.js';
 import { log, logOnce, logThrottled, assert } from './debugLog.js';
 
@@ -35,6 +37,14 @@ const WAVE_CLEAR_FRAMES = 90;        // 1.5 seconds - brief victory moment
 const BOSS_INTRO_FRAMES = 60;        // 1 second - dramatic entrance without delay
 const BOSS_DEFEATED_FRAMES = 120;    // 2 seconds - satisfying victory beat
 const ARENA_TRANSITION_FRAMES = 60;  // 1 second
+
+// Softlock failsafe: if wave stalls (budget exhausted + enemies remain, or stress pause with no kills)
+// for this many frames, force-clear remaining enemies to prevent stuck runs.
+const SOFTLOCK_FAILSAFE_FRAMES = 600;  // 10 seconds at 60fps
+let softlockTimer = 0;
+let lastKnownEnemyCount = 0;
+let stressPauseTimer = 0;
+let lastKillCount = 0;
 
 function getStressPauseThreshold() {
     const raw = Number(TUNING.stressPauseThreshold);
@@ -77,6 +87,16 @@ function handleWaveIntro() {
     if (gameState.waveTimer > WAVE_INTRO_FRAMES) {
         gameState.waveState = WAVE_STATE.WAVE_ACTIVE;
         gameState.waveTimer = 0;
+        
+        // Reset softlock failsafe for new wave
+        softlockTimer = 0;
+        lastKnownEnemyCount = 0;
+        stressPauseTimer = 0;
+        lastKillCount = gameState.kills;
+        
+        // Reset budget breather flags for new wave
+        gameState.budgetBreather50 = false;
+        gameState.budgetBreather75 = false;
         
         const maxWaves = getMaxWaves();
         const isLessonWave = (gameState.currentWave === 1);
@@ -122,8 +142,9 @@ function handleWaveIntro() {
             }
         }
         
-        // Initialize threat budget
-        gameState.waveBudgetTotal = Math.floor(baseBudget.total * arenaScale * modifierMult);
+        // Initialize threat budget (apply difficulty spawn multiplier)
+        const diffConfig = getDifficultyConfig();
+        gameState.waveBudgetTotal = Math.floor(baseBudget.total * arenaScale * modifierMult * diffConfig.spawnMult);
         gameState.waveBudgetRemaining = gameState.waveBudgetTotal;
         
         // Apply cognitive cap from modifier if specified (breather waves have lower cognitive load)
@@ -138,9 +159,9 @@ function handleWaveIntro() {
         gameState.microBreatherTimer = 0;
         gameState.microBreatherTargetDuration = PACING_CONFIG.microBreatherDuration;
         
-        // Arena 1 explicit budget breathers (one-time triggers per wave)
-        gameState.arena1BudgetBreather50 = false;
-        gameState.arena1BudgetBreather75 = false;
+        // Budget breathers (one-time triggers per wave) - applies to all arenas
+        gameState.budgetBreather50 = false;
+        gameState.budgetBreather75 = false;
         gameState.stressPauseActive = false;
         gameState.waveSpawnWarned = false; // Reset spawn warning flag
         
@@ -335,26 +356,34 @@ function handleWaveActive() {
     if (enemies.length >= getStressPauseThreshold()) {
         if (!gameState.stressPauseActive) {
             gameState.stressPauseActive = true;
+            stressPauseTimer = 0;
+            lastKillCount = gameState.kills;
             // Optional: signal music to dip
         }
         // Don't spawn more until player clears some
+        // Softlock failsafe: if stress pause persists with no kills, force-clear
+        updateSoftlockFailsafe();
         checkWaveComplete();
         return;
     }
     gameState.stressPauseActive = false;
+    stressPauseTimer = 0;  // Reset when stress pause ends
     
-    // Arena 1 explicit budget breathers (50% + 75% budget cleared)
+    // Budget-based breathing beats (50% + 75% budget cleared) - applies to all arenas
     // These pause spawning only (enemies still move/attack), but create a readable intensity dip.
-    if (gameState.currentArena === 1 &&
-        !gameState.microBreatherActive &&
+    if (!gameState.microBreatherActive &&
         gameState.waveBudgetTotal > 0 &&
         gameState.waveBudgetRemaining > 0) {
         
         const remainingRatio = gameState.waveBudgetRemaining / gameState.waveBudgetTotal;
         
+        // Initialize budget breather flags if not present
+        if (!gameState.budgetBreather50) gameState.budgetBreather50 = false;
+        if (!gameState.budgetBreather75) gameState.budgetBreather75 = false;
+        
         // After 50% spent => remaining <= 50%
-        if (!gameState.arena1BudgetBreather50 && remainingRatio <= 0.5) {
-            gameState.arena1BudgetBreather50 = true;
+        if (!gameState.budgetBreather50 && remainingRatio <= 0.5) {
+            gameState.budgetBreather50 = true;
             gameState.microBreatherActive = true;
             gameState.microBreatherTimer = 0;
             gameState.microBreatherTargetDuration = 120; // 2 seconds at 60fps
@@ -363,8 +392,8 @@ function handleWaveActive() {
         }
         
         // After 75% spent => remaining <= 25%
-        if (!gameState.microBreatherActive && !gameState.arena1BudgetBreather75 && remainingRatio <= 0.25) {
-            gameState.arena1BudgetBreather75 = true;
+        if (!gameState.microBreatherActive && !gameState.budgetBreather75 && remainingRatio <= 0.25) {
+            gameState.budgetBreather75 = true;
             gameState.microBreatherActive = true;
             gameState.microBreatherTimer = 0;
             gameState.microBreatherTargetDuration = 60; // 1 second at 60fps
@@ -421,6 +450,9 @@ function handleWaveActive() {
             WAVE_CONFIG.integrationWave.burstChanceBase + gameState.currentWave * 0.02
         );
     }
+    
+    // Reduce early spawn cadence by 12% for better pacing (less "2x speed" feel)
+    spawnInterval = Math.floor(spawnInterval * 1.12);
     
     // Apply modifier effects
     if (gameState.waveModifier && WAVE_MODIFIERS[gameState.waveModifier]) {
@@ -515,6 +547,9 @@ function handleWaveActive() {
         gameState.waveSpawnTimer = 0;  // Reset frame-based spawn timer
     }
     
+    // Softlock failsafe: track stall when budget exhausted but enemies remain
+    updateSoftlockFailsafe();
+    
     checkWaveComplete();
 }
 
@@ -523,6 +558,101 @@ function getEnemyThreatCost(enemyType) {
     const costs = THREAT_BUDGET.costs[enemyType];
     if (!costs) return 20; // Default cost
     return costs.durability + costs.damage;
+}
+
+// Softlock failsafe: detect and resolve stalled waves
+function updateSoftlockFailsafe() {
+    const budgetExhausted = gameState.waveBudgetRemaining <= 0;
+    const enemiesAlive = enemies.length > 0;
+    const stressPauseActive = gameState.stressPauseActive;
+    
+    // Track stress pause with no kills
+    if (stressPauseActive) {
+        // Reset timer if player is making progress (kills increased)
+        if (gameState.kills > lastKillCount) {
+            stressPauseTimer = 0;
+            lastKillCount = gameState.kills;
+        } else {
+            stressPauseTimer++;
+        }
+        
+        // If stress pause persists > 10 seconds with no kills, temporarily lift pause
+        if (stressPauseTimer >= SOFTLOCK_FAILSAFE_FRAMES) {
+            log('SAFETY', 'stress_pause_failsafe', {
+                arena: gameState.currentArena,
+                wave: gameState.currentWave,
+                enemiesAlive: enemies.length,
+                stalledFrames: stressPauseTimer
+            });
+            // Temporarily lift stress pause to allow spawning (player may need help clearing)
+            gameState.stressPauseActive = false;
+            stressPauseTimer = 0;
+            // Force-clear stuck enemies if they're truly unreachable
+            if (enemies.length >= getStressPauseThreshold() * 1.5) {
+                // Too many enemies, likely stuck - clear oldest half
+                const toRemove = Math.floor(enemies.length / 2);
+                for (let i = 0; i < toRemove; i++) {
+                    const enemy = enemies[i];
+                    spawnParticle(enemy.position, enemy.baseColor || 0xffffff, 5);
+                    if (enemy.isGroup || enemy.type === 'Group') {
+                        enemy.traverse(child => {
+                            if (child.material) child.material.dispose();
+                        });
+                    } else {
+                        if (enemy.baseMaterial) enemy.baseMaterial.dispose();
+                        if (enemy.material) enemy.material.dispose();
+                    }
+                    scene.remove(enemy);
+                }
+                enemies.splice(0, toRemove);
+                log('SAFETY', 'stress_pause_clear', { cleared: toRemove, remaining: enemies.length });
+            }
+        }
+    }
+    
+    // Track budget exhausted + enemies remain (wave should be winding down)
+    if (budgetExhausted && enemiesAlive) {
+        // Reset timer if player is making progress (enemy count decreased)
+        if (enemies.length < lastKnownEnemyCount) {
+            softlockTimer = 0;
+            lastKnownEnemyCount = enemies.length;
+            return;
+        }
+        lastKnownEnemyCount = enemies.length;
+        
+        softlockTimer++;
+        
+        if (softlockTimer >= SOFTLOCK_FAILSAFE_FRAMES) {
+            // Stall detected — force-clear remaining enemies
+            log('SAFETY', 'softlock_failsafe', {
+                arena: gameState.currentArena,
+                wave: gameState.currentWave,
+                enemiesCleared: enemies.length,
+                stalledFrames: softlockTimer
+            });
+            
+            // Dispose and remove all remaining enemies
+            for (const enemy of enemies) {
+                spawnParticle(enemy.position, enemy.baseColor || 0xffffff, 5);
+                if (enemy.isGroup || enemy.type === 'Group') {
+                    enemy.traverse(child => {
+                        if (child.material) child.material.dispose();
+                    });
+                } else {
+                    if (enemy.baseMaterial) enemy.baseMaterial.dispose();
+                    if (enemy.material) enemy.material.dispose();
+                }
+                scene.remove(enemy);
+            }
+            enemies.length = 0;
+            
+            softlockTimer = 0;
+        }
+    } else {
+        // Reset timer when conditions not met
+        softlockTimer = 0;
+        lastKnownEnemyCount = enemies.length;
+    }
 }
 
 // Check if wave is complete
@@ -579,6 +709,9 @@ function handleWaveClear() {
         if (gameState.combatStats) {
             gameState.combatStats.waveDamageTaken = 0;
         }
+        
+        // Maybe spawn item chest (skips lesson waves)
+        maybeSpawnChest();
     }
     gameState.waveTimer++;
     
@@ -653,9 +786,6 @@ function handleBossIntro() {
     
     // Phase 1: Wait for announcement, then spawn boss
     if (gameState.waveTimer === BOSS_INTRO_FRAMES) {
-        // Clear any remaining pickups before boss fight
-        clearAllPickups();
-        
         const boss = spawnBoss(gameState.currentArena);
         gameState.currentBossRef = boss;  // Store reference for demo sequence
         hideBossAnnouncement();
@@ -679,9 +809,20 @@ function handleBossIntro() {
                 gameState.cutsceneInvincible = true;
                 boss.aiState = 'intro_showcase';  // New active showcase state
                 boss.showcaseTimer = 0;
+            } else if (gameState.currentArena === 2) {
+                // Arena 2: Intro preview beat (jump slam + hazard preview)
+                gameState.cutsceneActive = true;
+                gameState.cutsceneInvincible = true;
+                boss.introPreviewOnly = true;
+                boss.introHazardPreviewed = false;
+                boss.aiState = 'jump_prep';
+                boss.aiTimer = 0;
             } else {
                 prepareBossForCutscene(boss);
             }
+
+            // Clear projectiles on cutscene start to prevent stray hits
+            clearProjectiles();
             
             // Extended cinematic duration for Arena 1 demo sequence
             const cinematicDuration = (gameState.currentArena === 1) 
@@ -794,8 +935,39 @@ function handleBossIntro() {
             }
         }
     }
-    // Non-Arena 1 bosses: Immediate transition (existing behavior)
-    else if (gameState.currentArena !== 1 && gameState.waveTimer > BOSS_INTRO_FRAMES) {
+    // Arena 2: Run preview beat (jump slam, then hazard preview), then transition to combat
+    else if (gameState.currentArena === 2 && gameState.waveTimer > BOSS_INTRO_FRAMES) {
+        const boss = gameState.currentBossRef || getCurrentBoss();
+        if (!boss) return;
+        
+        // After jump slam resolves, preview hazards once
+        if (!boss.introHazardPreviewed && boss.aiState === 'idle') {
+            boss.aiState = 'hazards';
+            boss.aiTimer = 0;
+            boss.introHazardPreviewed = true;
+        }
+        
+        // After hazard preview completes, transition to combat
+        if (boss.introHazardPreviewed && boss.aiState === 'idle') {
+            endCutsceneAndRepositionPlayer(boss);
+            shortenCinematic(CINEMATIC_BOSS_HOLD_FRAMES);
+            
+            boss.introPreviewOnly = false;
+            boss.introHazardPreviewed = false;
+            boss.abilityCooldowns = boss.abilityCooldowns || {};
+            boss.abilityCooldowns.jumpSlam = 120;
+            boss.abilityCooldowns.hazards = 120;
+            
+            gameState.bossActive = true;
+            gameState.waveState = WAVE_STATE.BOSS_ACTIVE;
+            gameState.waveTimer = 0;
+            gameState.announcementPaused = false;
+            gameState.currentBossRef = null;
+            return;
+        }
+    }
+    // Non-Arena 1/2 bosses: Immediate transition (existing behavior)
+    else if (gameState.currentArena !== 1 && gameState.currentArena !== 2 && gameState.waveTimer > BOSS_INTRO_FRAMES) {
         const boss = gameState.currentBossRef || getCurrentBoss();
         if (boss) {
             // Safely reposition player and resume boss AI
@@ -1089,8 +1261,9 @@ function handleBossDefeated() {
     
     // PLAYTEST LOCKDOWN: After Boss 1 defeat, show feedback overlay and end the run
     const isPlaytestEnd = gameState.currentArena === 1;
-    if (isPlaytestEnd && gameState.waveTimer > BOSS_DEFEATED_FRAMES && isFeedbackEnabled()) {
-        // Stop the game and show feedback overlay (only if feedback system configured)
+    if (isPlaytestEnd && gameState.waveTimer > BOSS_DEFEATED_FRAMES) {
+        // Stop the game and show feedback overlay
+        // Shows functional form when configured, or a "not configured" warning when missing
         gameState.running = false;
         gameState.paused = true;
         showFeedbackOverlay('boss1');

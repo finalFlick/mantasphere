@@ -52,9 +52,9 @@ export function isHighScore(score) {
 }
 
 // Add score to leaderboard
-export function addScore(name, score, arena, wave, level, timeElapsed) {
+export function addScore(name, score, arena, wave, level, timeElapsed, difficulty = 'normal') {
     const badges = getActiveBadges().map(b => b.id);
-    const entry = createLeaderboardEntry(name, score, arena, wave, level, badges, timeElapsed);
+    const entry = createLeaderboardEntry(name, score, arena, wave, level, badges, timeElapsed, difficulty);
     
     leaderboard.push(entry);
     leaderboard.sort((a, b) => b.score - a.score);

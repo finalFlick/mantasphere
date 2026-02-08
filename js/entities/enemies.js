@@ -1,13 +1,13 @@
 import { scene } from '../core/scene.js';
-import { gameState } from '../core/gameState.js';
+import { gameState, getDifficultyConfig } from '../core/gameState.js';
 import { enemies, obstacles, hazardZones, tempVec3 } from '../core/entities.js';
 import { player } from './player.js';
 import { ENEMY_TYPES } from '../config/enemies.js';
 import { ENEMY_CAPS, WAVE_CONFIG, WAVE_MODIFIERS, COGNITIVE_LIMITS, THREAT_BUDGET, SPLITLING_SPAWN_STUN_FRAMES, SCHOOL_CONFIG, SPAWN_CHOREOGRAPHY } from '../config/constants.js';
-import { spawnParticle, spawnEnemyDeathVfx } from '../effects/particles.js';
+import { spawnParticle, spawnEnemyDeathVfx, spawnShieldBreakVFX } from '../effects/particles.js';
 import { createHazardZone } from '../arena/generator.js';
 import { takeDamage, canTakeCollisionDamage, resetDamageCooldown, tickDamageCooldown } from '../systems/damage.js';
-import { createShieldBubble, updateShieldVisual, createRushTelegraph, updateRushTelegraph, cleanupVFX } from '../systems/visualFeedback.js';
+import { createShieldBubble, updateShieldVisual, createRushTelegraph, updateRushTelegraph, cleanupVFX, triggerSlowMo } from '../systems/visualFeedback.js';
 import { showTutorialCallout } from '../ui/hud.js';
 import { PulseMusic } from '../systems/pulseMusic.js';
 import { ARENA_CONFIG } from '../config/arenas.js';
@@ -23,9 +23,17 @@ let cachedPillarTops = [];
 const geometryCache = new Map();
 
 function getCachedSphereGeometry(size, segments = 16) {
-    const key = `${size.toFixed(2)}_${segments}`;
+    const key = `sphere_${size.toFixed(2)}_${segments}`;
     if (!geometryCache.has(key)) {
         geometryCache.set(key, new THREE.SphereGeometry(size, segments, segments));
+    }
+    return geometryCache.get(key);
+}
+
+function getCachedRingGeometry(innerRadius, outerRadius, segments = 32) {
+    const key = `ring_${innerRadius.toFixed(2)}_${outerRadius.toFixed(2)}_${segments}`;
+    if (!geometryCache.has(key)) {
+        geometryCache.set(key, new THREE.RingGeometry(innerRadius, outerRadius, segments));
     }
     return geometryCache.get(key);
 }
@@ -213,11 +221,174 @@ function createMiniPorcupinefishMesh(size, color) {
     return group;
 }
 
+// Create Guardian Crab mesh (Arena 2 signature enemy - shield aura source)
+function createGuardianCrabMesh(typeData) {
+    const size = typeData.size;
+    const color = typeData.color;
+    const profile = typeData.visualProfile;
+    const group = new THREE.Group();
+
+    const bodyMat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.45
+    });
+
+    // Main body (carapace) - flattened, widened sphere
+    const bodyGeom = getCachedSphereGeometry(size, 14);
+    const body = new THREE.Mesh(bodyGeom, bodyMat);
+    body.castShadow = true;
+    body.scale.set(1.25, 0.55, 1.35);
+    body.name = 'crabBody';
+    group.add(body);
+
+    // Glow halo
+    const glowGeom = getCachedSphereGeometry(size * 1.2, 10);
+    const glowMat = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.18
+    });
+    const glow = new THREE.Mesh(glowGeom, glowMat);
+    glow.scale.copy(body.scale);
+    glow.name = 'crabGlow';
+    group.add(glow);
+
+    // Eye stalks + tips
+    const stalkGeom = getCachedConeGeometry(size * 0.08, size * 0.5, 6);
+    const stalkMat = new THREE.MeshStandardMaterial({ color: 0x222233 });
+    const eyeGeom = getCachedSphereGeometry(size * 0.12, 8);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    const leftStalk = new THREE.Mesh(stalkGeom, stalkMat);
+    leftStalk.position.set(-size * 0.35, size * 0.4, size * 0.65);
+    leftStalk.name = 'leftEyeStalk';
+    group.add(leftStalk);
+    const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+    leftEye.position.set(-size * 0.35, size * 0.65, size * 0.7);
+    leftEye.name = 'leftEye';
+    group.add(leftEye);
+
+    const rightStalk = new THREE.Mesh(stalkGeom, stalkMat);
+    rightStalk.position.set(size * 0.35, size * 0.4, size * 0.65);
+    rightStalk.name = 'rightEyeStalk';
+    group.add(rightStalk);
+    const rightEye = new THREE.Mesh(eyeGeom, eyeMat.clone());
+    rightEye.position.set(size * 0.35, size * 0.65, size * 0.7);
+    rightEye.name = 'rightEye';
+    group.add(rightEye);
+
+    // Claws - flattened spheres in front-left/right
+    const clawGeom = getCachedSphereGeometry(size * 0.45, 10);
+    const clawMat = new THREE.MeshStandardMaterial({
+        color: color,
+        emissive: color,
+        emissiveIntensity: 0.35
+    });
+    const leftClaw = new THREE.Mesh(clawGeom, clawMat);
+    leftClaw.scale.set(1.4, 0.5, 0.9);
+    leftClaw.position.set(-size * 0.9, 0, size * 0.5);
+    leftClaw.name = 'leftClaw';
+    leftClaw.userData.baseScale = leftClaw.scale.clone();
+    group.add(leftClaw);
+
+    const rightClaw = new THREE.Mesh(clawGeom, clawMat.clone());
+    rightClaw.scale.set(1.4, 0.5, 0.9);
+    rightClaw.position.set(size * 0.9, 0, size * 0.5);
+    rightClaw.name = 'rightClaw';
+    rightClaw.userData.baseScale = rightClaw.scale.clone();
+    group.add(rightClaw);
+
+    // Legs - 4 cones angled outward
+    const legGeom = getCachedConeGeometry(size * 0.08, size * 0.4, 5);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x222233 });
+    const legOffsets = [
+        { x: -0.8, z: 0.1, rotZ: 0.6 },
+        { x: -0.7, z: -0.4, rotZ: 0.5 },
+        { x: 0.8, z: 0.1, rotZ: -0.6 },
+        { x: 0.7, z: -0.4, rotZ: -0.5 }
+    ];
+    for (const offset of legOffsets) {
+        const leg = new THREE.Mesh(legGeom, legMat);
+        leg.position.set(size * offset.x, -size * 0.1, size * offset.z);
+        leg.rotation.x = Math.PI / 2;
+        leg.rotation.z = offset.rotZ;
+        group.add(leg);
+    }
+
+    // Anemone core (shield source) + tendrils
+    const coreGeom = getCachedSphereGeometry(size * 0.28, 8);
+    const coreMat = new THREE.MeshStandardMaterial({
+        color: 0x6688ff,
+        emissive: 0x4466ff,
+        emissiveIntensity: 0.8
+    });
+    const core = new THREE.Mesh(coreGeom, coreMat);
+    core.position.set(0, size * 0.55, -size * 0.1);
+    core.name = 'anemoneCore';
+    group.add(core);
+
+    const tendrilGeom = getCachedConeGeometry(size * 0.08, size * 0.35, 6);
+    const tendrilMat = new THREE.MeshStandardMaterial({
+        color: 0x6688ff,
+        emissive: 0x4466ff,
+        emissiveIntensity: 0.7
+    });
+    const tendrils = [];
+    const tendrilOffsets = [
+        { x: -0.15, z: -0.05, rotZ: 0.2 },
+        { x: 0.15, z: -0.05, rotZ: -0.2 },
+        { x: 0.0, z: 0.12, rotZ: 0.0 }
+    ];
+    for (const offset of tendrilOffsets) {
+        const tendril = new THREE.Mesh(tendrilGeom, tendrilMat.clone());
+        tendril.position.set(size * offset.x, size * 0.8, size * offset.z);
+        tendril.rotation.z = offset.rotZ;
+        tendril.name = 'anemoneTendril';
+        tendril.userData.baseScale = tendril.scale.clone();
+        tendrils.push(tendril);
+        group.add(tendril);
+    }
+
+    // Aura ring (wardens are Groups, so we attach it here)
+    const auraRingGeo = getCachedRingGeometry(0.9, 1.0, 48);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+        color: profile?.ringColor || 0x4466ff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(auraRingGeo, ringMaterial);
+    ring.rotation.x = -Math.PI / 2;  // Lay flat on ground
+    ring.position.y = -size + 0.05;  // Slightly above ground (relative to enemy center)
+    ring.name = 'auraRing';
+    group.add(ring);
+
+    // Store references for animation and hit flashes
+    group.baseMaterial = bodyMat;
+    group.visualProfile = profile;
+    group.leftClaw = leftClaw;
+    group.rightClaw = rightClaw;
+    group.guardianCoreMesh = core;
+    group.anemoneTendrils = tendrils;
+    group.auraRing = ring;
+    group.auraRingMaterial = ringMaterial;
+    group.auraRingPulse = 0;
+    group.isGuardianCrab = true;
+
+    return group;
+}
+
 // Build enemy mesh - simple smooth sphere with glow/pulse/orbit effects
 function buildEnemyMesh(typeData) {
     // Special case: Red Puffer uses mini porcupinefish mesh (like Boss 1)
     if (typeData.usePorcupinefishMesh) {
         return createMiniPorcupinefishMesh(typeData.size, typeData.color);
+    }
+
+    // Special case: Guardian Crab uses crab mesh (Arena 2 signature enemy)
+    if (typeData.useGuardianCrabMesh) {
+        return createGuardianCrabMesh(typeData);
     }
     
     const profile = typeData.visualProfile;
@@ -283,6 +454,26 @@ function buildEnemyMesh(typeData) {
     // Store visual profile for runtime effects
     enemy.visualProfile = profile;
     
+    // For wardenAura type, create pulsing ground ring
+    if (profile?.type === 'wardenAura') {
+        const auraRingGeo = getCachedRingGeometry(0.9, 1.0, 48);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: profile.ringColor || 0x4466ff,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+
+        const ring = new THREE.Mesh(auraRingGeo, ringMaterial);
+        ring.rotation.x = -Math.PI / 2;  // Lay flat on ground
+        ring.position.y = -typeData.size + 0.05;  // Slightly above ground (relative to enemy center)
+        enemy.add(ring);
+
+        enemy.auraRing = ring;
+        enemy.auraRingMaterial = ringMaterial;  // Store reference for disposal
+        enemy.auraRingPulse = 0;  // Animation progress 0-1
+    }
+
     // For orbit type, create orbiting particle group
     if (profile?.type === 'orbit') {
         enemy.orbitParticles = [];
@@ -439,16 +630,17 @@ function getSafeSpawnAngle(playerVelocity) {
     return spawnAngle;
 }
 
-// Arena 1 specific: Spawn within the forward 180° arc relative to the player's movement direction.
+// Spawn within the forward 180° arc relative to the player's facing direction (camera angle).
 // This reduces "rear spawn" moments that feel like off-screen ambushes.
 function getForward180SpawnAngle(playerVelocity) {
-    if (!playerVelocity) return Math.random() * Math.PI * 2;
-    const horizontalSpeed = Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.z * playerVelocity.z);
-    if (horizontalSpeed < 0.01) return Math.random() * Math.PI * 2;
+    // Use camera angle (player facing direction) for more accurate forward arc
+    const forwardX = -Math.sin(cameraAngleX);
+    const forwardZ = -Math.cos(cameraAngleX);
+    const forwardAngle = Math.atan2(forwardZ, forwardX);
     
-    const moveAngle = Math.atan2(playerVelocity.z, playerVelocity.x);
-    const halfArc = Math.PI / 2; // +/- 90° around "ahead of movement"
-    return moveAngle + Math.PI + (Math.random() * 2 - 1) * halfArc;
+    // Spawn within 180° forward arc (±90° from forward direction)
+    const halfArc = Math.PI / 2; // +/- 90° around forward
+    return forwardAngle + (Math.random() * 2 - 1) * halfArc;
 }
 
 // Check if two points are in the same corridor segment (Arena 5)
@@ -536,9 +728,22 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
         }
     }
     
-    // Default spawn: random distance and angle
+    // Default spawn: random distance and angle with forward arc bias
     let distance = 28 + Math.random() * 12;
     let angle = Math.random() * Math.PI * 2;
+    
+    // Apply forward arc bias (prefer spawning in front of player)
+    // Use camera angle to determine player facing direction
+    const forwardX = -Math.sin(cameraAngleX);
+    const forwardZ = -Math.cos(cameraAngleX);
+    
+    // 70% chance to spawn in forward 180° arc, 30% chance anywhere
+    if (Math.random() < 0.7) {
+        angle = getForward180SpawnAngle(playerVelocity);
+    } else {
+        // 30% chance for rear spawns - but will get increased distance below
+        angle = Math.random() * Math.PI * 2;
+    }
     
     // Apply anti-edge bias for Arena 1 (and any arena with this config)
     if (spawnConfig?.antiEdgeBias) {
@@ -555,15 +760,7 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
             // Bias spawn angle toward center with some randomness (±72 degrees)
             angle = toCenterAngle + (Math.random() - 0.5) * Math.PI * 0.8;
             distance = 20 + Math.random() * 10;  // Closer spawns when edge-kiting
-        } else {
-            // Player is in center area - use forward arc spawning for Arena 1 fairness
-            if (arena === 1) angle = getForward180SpawnAngle(playerVelocity);
-            else angle = getSafeSpawnAngle(playerVelocity);
         }
-    } else {
-        // No special config - just use safe arc spawning
-        if (arena === 1) angle = getForward180SpawnAngle(playerVelocity);
-        else angle = getSafeSpawnAngle(playerVelocity);
     }
 
     // Debug tuning: enforce minimum spawn distance from player
@@ -573,6 +770,17 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
         distance = Math.max(distance, safeRadius);
     }
     
+    
+    // Check if spawn is in rear 180° arc - increase distance for rear spawns
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    const dot = dx * forwardX + dz * forwardZ;
+    const isRearSpawn = dot < 0;  // Negative dot = behind player
+    
+    if (isRearSpawn) {
+        // Rear spawns: minimum 12 units (vs 8 for forward)
+        distance = Math.max(12, distance);
+    }
     
     // Calculate position
     let x = playerPos.x + Math.cos(angle) * distance;
@@ -616,26 +824,47 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     x = Math.max(-42, Math.min(42, x));
     z = Math.max(-42, Math.min(42, z));
     
-    // Arena 6: Validate spawn position is not inside hazard zones
-    if (arena === 6 && hazardZones.length > 0) {
-        let spawnAttempts = 0;
-        while (!isValidEnemyPosition(x, z, 0.5) && spawnAttempts < 5) {
-            // Retry with different angle, biased toward center
+    // Universal post-clamp validation: min distance from player + obstacle/hazard check
+    // Use different minimums for forward vs rear spawns
+    const MIN_SPAWN_DIST_FORWARD = 8;  // Minimum distance for forward spawns
+    const MIN_SPAWN_DIST_REAR = 12;    // Minimum distance for rear spawns (more warning time)
+    const MAX_SPAWN_RETRIES = 10;
+    let spawnValid = false;
+    
+    // Re-check if spawn is rear (after position calculation)
+    const finalDx = x - playerPos.x;
+    const finalDz = z - playerPos.z;
+    const finalDot = (finalDx * forwardX + finalDz * forwardZ) / Math.sqrt(finalDx * finalDx + finalDz * finalDz);
+    const isRear = finalDot < 0;
+    const MIN_SPAWN_DIST = isRear ? MIN_SPAWN_DIST_REAR : MIN_SPAWN_DIST_FORWARD;
+    
+    for (let attempt = 0; attempt < MAX_SPAWN_RETRIES && !spawnValid; attempt++) {
+        const dx = x - playerPos.x;
+        const dz = z - playerPos.z;
+        const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+        const positionClear = isValidEnemyPosition(x, z, 0.5);
+        
+        if (distToPlayer >= MIN_SPAWN_DIST && positionClear) {
+            spawnValid = true;
+        } else {
+            // Retry with a new random angle, biased toward center if near edge
             const newAngle = Math.atan2(-z, -x) + (Math.random() - 0.5) * Math.PI;
-            const newDist = 20 + Math.random() * 15;
+            const newDist = MIN_SPAWN_DIST + Math.random() * 20;
             x = playerPos.x + Math.cos(newAngle) * newDist;
             z = playerPos.z + Math.sin(newAngle) * newDist;
             x = Math.max(-42, Math.min(42, x));
             z = Math.max(-42, Math.min(42, z));
-            spawnAttempts++;
         }
-        
-        // Fallback to center-biased spawn if still invalid
-        if (!isValidEnemyPosition(x, z, 0.5)) {
-            const fallbackAngle = Math.random() * Math.PI * 2;
-            x = Math.cos(fallbackAngle) * 15;  // Near center
-            z = Math.sin(fallbackAngle) * 15;
-        }
+    }
+    
+    // Fallback to center-biased spawn if still invalid after retries
+    if (!spawnValid) {
+        const fallbackAngle = Math.random() * Math.PI * 2;
+        x = Math.cos(fallbackAngle) * 15;  // Near center
+        z = Math.sin(fallbackAngle) * 15;
+        logOnce('spawn-fallback-center', 'SAFETY', 'spawn_fallback_center', {
+            arena, playerX: playerPos.x.toFixed(1), playerZ: playerPos.z.toFixed(1)
+        });
     }
     
     return { x, z };
@@ -668,20 +897,20 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     const enemy = buildEnemyMesh(typeData);
     
     enemy.position.set(x, typeData.size, z);
-    enemy.health = Math.floor(typeData.health * arenaScale * waveScale * healthMult);
+    
+    // Apply difficulty multipliers
+    const diffConfig = getDifficultyConfig();
+    
+    enemy.health = Math.floor(typeData.health * arenaScale * waveScale * healthMult * diffConfig.hpMult);
     enemy.maxHealth = enemy.health;
-    enemy.speed = typeData.speed * (1 + gameState.currentArena * 0.02);
-    enemy.damage = Math.floor(typeData.damage * arenaScale);
+    // Optional: 10% speed reduction for better pacing (less frantic feel)
+    enemy.speed = typeData.speed * (1 + gameState.currentArena * 0.02) * 0.9;
+    enemy.damage = Math.floor(typeData.damage * arenaScale * diffConfig.dpsMult);
     enemy.size = typeData.size;
     enemy.baseSize = typeData.size;
     enemy.isBoss = false;
     enemy.isElite = typeData.spawnWeight < 10;
     enemy.xpValue = Math.floor(typeData.xpValue * xpMult);
-
-    // Difficulty scaling (debug lever)
-    const difficultyRaw = Number(TUNING.difficultyMultiplier ?? 1.0);
-    const difficultyMult = Math.max(0.5, Math.min(2.0, difficultyRaw || 1.0));
-    enemy.damage = Math.max(1, Math.floor(enemy.damage * difficultyMult));
     
     // Wave progression XP bonus: +15% per wave after wave 1
     const waveBonus = 1 + (gameState.currentWave - 1) * 0.15;
@@ -696,8 +925,8 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     enemy.onDeath = typeData.onDeath || null;
     enemy.splitCount = typeData.splitCount || 0;
     
-    // Shield properties (for shielded enemies)
-    if (typeData.shieldHP) {
+    // Shield properties (for enemies with self-shields - NOT wardenSupport)
+    if (typeData.shieldHP && typeData.behavior !== 'wardenSupport') {
         enemy.shieldHP = typeData.shieldHP;
         enemy.maxShieldHP = typeData.shieldHP;
         enemy.shieldBroken = false;
@@ -705,10 +934,22 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     } else {
         enemy.shieldHP = 0;
     }
+
+    // Guardian Crab anemone core (wardenSupport aura source)
+    if (typeData.behavior === 'wardenSupport') {
+        enemy.anemoneCoreHP = typeData.anemoneCoreHP ?? 12;
+        enemy.anemoneCoreMaxHP = enemy.anemoneCoreHP;
+        enemy.anemoneCoreBroken = false;
+    }
     
     // Stun properties
     enemy.stunned = false;
     enemy.stunTimer = 0;
+    
+    // Aggro delay: newly spawned enemies have grace window before they can deal damage
+    // Prevents unfair hits from off-screen spawns
+    enemy.aggroDelay = 0.3 + Math.random() * 0.2; // 0.3-0.5s grace window
+    enemy.aggroTimer = 0;
     
     // Visual and movement properties
     enemy.movementSignature = typeData.movementSignature || null;
@@ -883,6 +1124,31 @@ export function spawnSchool(centerX, centerZ, enemyType, schoolSize) {
         x = Math.max(-42, Math.min(42, x));
         z = Math.max(-42, Math.min(42, z));
         
+        // Validate follower position (not inside obstacle/hazard and not too close to player)
+        const MIN_SPAWN_DIST = 8;  // Minimum distance from player (units)
+        const dx = x - player.position.x;
+        const dz = z - player.position.z;
+        const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+        const positionClear = isValidEnemyPosition(x, z, 0.5);
+        
+        if (distToPlayer < MIN_SPAWN_DIST || !positionClear) {
+            // Try a slightly adjusted position
+            const adjustAngle = angle + (Math.random() - 0.5) * Math.PI * 0.5;
+            x = centerX + Math.cos(adjustAngle) * dist;
+            z = centerZ + Math.sin(adjustAngle) * dist;
+            x = Math.max(-42, Math.min(42, x));
+            z = Math.max(-42, Math.min(42, z));
+            
+            // Re-check distance after adjustment
+            const newDx = x - player.position.x;
+            const newDz = z - player.position.z;
+            const newDistToPlayer = Math.sqrt(newDx * newDx + newDz * newDz);
+            if (newDistToPlayer < MIN_SPAWN_DIST || !isValidEnemyPosition(x, z, 0.5)) {
+                // Skip this follower if still invalid after adjustment
+                continue;
+            }
+        }
+        
         const follower = spawnEnemyAtPosition(enemyType, x, z);
         if (follower) {
             follower.schoolId = schoolId;
@@ -1003,8 +1269,9 @@ export function spawnWaveEnemy() {
         // Fall through to single spawn if can't afford school
     }
     
-    // Bouncer spawn validation - prevent spawning into immediate collision
+    // Bouncer spawn validation - prevent spawning into immediate collision or too close to player
     if (typeData.behavior === 'bouncer') {
+        const MIN_SPAWN_DIST = 8;  // Minimum distance from player (units)
         let spawnAttempts = 0;
         let validSpawn = false;
         
@@ -1020,7 +1287,13 @@ export function spawnWaveEnemy() {
                 }
             }
             
-            if (!immediateCollision) {
+            // Check distance from player
+            const dx = x - player.position.x;
+            const dz = z - player.position.z;
+            const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+            const tooClose = distToPlayer < MIN_SPAWN_DIST;
+            
+            if (!immediateCollision && !tooClose && isValidEnemyPosition(x, z, 0.5)) {
                 validSpawn = true;
             } else {
                 const angle = Math.random() * Math.PI * 2;
@@ -1035,7 +1308,10 @@ export function spawnWaveEnemy() {
     // Spawn single enemy
     const enemy = spawnEnemyAtPosition(enemyType, x, z);
     
-    // Show tutorial callout for special enemies
+    // Show tutorial callout for special enemies (keyed by ENEMY_TYPES id)
+    if (enemyType.name === 'shielded') {
+        showTutorialCallout('guardianCrab', 'Break the anemone core to disable shields!', 3000);
+    }
     if (enemyType.name === 'pillarPolice') {
         showTutorialCallout('pillarPolice', 'Climb to reach them!', 2000);
     }
@@ -1440,6 +1716,11 @@ export function updateEnemies(delta) {
         if (!enemy.movementTimer) enemy.movementTimer = 0;
         enemy.movementTimer++;
         
+        // Update aggro timer (grace period for newly spawned enemies)
+        if (enemy.aggroTimer !== undefined && enemy.aggroTimer < enemy.aggroDelay) {
+            enemy.aggroTimer += delta;
+        }
+        
         // Update shield visual (shieldMesh is null when broken)
         if (enemy.shieldMesh) {
             const shieldPercent = enemy.shieldHP / enemy.maxShieldHP;
@@ -1478,6 +1759,7 @@ export function updateEnemies(delta) {
             case 'waterBalloon': updateWaterBalloonEnemy(enemy); break;
             case 'teleporter': updateTeleporterEnemy(enemy); break;
             case 'pillarHopper': updatePillarHopperEnemy(enemy); break;
+            case 'wardenSupport': updateWardenSupportEnemy(enemy); break;
             default: updateChaseEnemy(enemy);
         }
         
@@ -1497,9 +1779,9 @@ export function updateEnemies(delta) {
             // If leader is dead, handleSchoolLeaderDeath will be called from damage system
         }
         
-        // Shielded enemy "enrage" anti-camping mechanic
+        // Guardian Crab "enrage" anti-camping mechanic
         // If stuck for too long, speed up to prevent players from camping behind cover
-        if (enemy.enemyType === 'shielded' && !enemy.enraged) {
+        if (enemy.enemyType === 'shielded' && enemy.behavior === 'wardenSupport' && !enemy.enraged) {
             // Initialize tracking
             if (!enemy.lastPosition) {
                 enemy.lastPosition = enemy.position.clone();
@@ -1570,9 +1852,11 @@ export function updateEnemies(delta) {
         }
         
         // Player collision (using frame-based damage cooldown)
+        // Check aggro delay: newly spawned enemies can't deal damage during grace period
+        const canDealDamage = !enemy.aggroTimer || enemy.aggroTimer >= enemy.aggroDelay;
         const scaledSize = enemy.baseSize * enemy.scale.x;
         if (enemy.position.distanceTo(player.position) < scaledSize + 0.5) {
-            if (canTakeCollisionDamage()) {
+            if (canTakeCollisionDamage() && canDealDamage) {
                 const typeName = ENEMY_TYPES[enemy.enemyType]?.name || enemy.enemyType || 'Enemy';
                 takeDamage(enemy.damage, typeName, 'enemy');
                 resetDamageCooldown();
@@ -1602,6 +1886,32 @@ function applyMovementSignature(enemy) {
             // Orbital wobble effect
             enemy.rotation.z = Math.sin(t * 0.15) * 0.2;
             break;
+
+        case 'scuttle': {
+            // Side-to-side waddle with subtle claw/anemone motion
+            const sway = Math.sin(t * 0.12) * 0.08;
+            enemy.rotation.z = sway;
+
+            const clawPulse = 1 + Math.sin(t * 0.2) * 0.06;
+            if (enemy.leftClaw?.userData?.baseScale) {
+                const base = enemy.leftClaw.userData.baseScale;
+                enemy.leftClaw.scale.set(base.x, base.y * clawPulse, base.z);
+            }
+            if (enemy.rightClaw?.userData?.baseScale) {
+                const base = enemy.rightClaw.userData.baseScale;
+                enemy.rightClaw.scale.set(base.x, base.y * clawPulse, base.z);
+            }
+
+            if (enemy.anemoneTendrils?.length) {
+                enemy.anemoneTendrils.forEach((tendril, index) => {
+                    const base = tendril.userData?.baseScale;
+                    if (!base) return;
+                    const tendrilPulse = 1 + Math.sin(t * 0.14 + index) * 0.12;
+                    tendril.scale.set(base.x, base.y * tendrilPulse, base.z);
+                });
+            }
+            break;
+        }
             
         case 'stomp':
             // Slow pulse effect for shielded enemies
@@ -1693,6 +2003,24 @@ function applyMovementSignature(enemy) {
             p.position.z = Math.sin(p.orbitAngle) * p.orbitRadius;
             p.position.y = Math.sin(p.orbitAngle * 2) * 0.3;
         });
+    }
+
+    // Update Warden aura ring pulse
+    if (profile?.type === 'wardenAura' && enemy.auraRing) {
+        const baseSpeed = profile.ringPulseSpeed || 0.03;
+        const speed = enemy.anemoneCoreBroken ? baseSpeed * 0.4 : baseSpeed;
+        enemy.auraRingPulse = (enemy.auraRingPulse || 0) + speed;
+        if (enemy.auraRingPulse > 1) enemy.auraRingPulse -= 1;
+
+        const auraRadius = ENEMY_TYPES[enemy.enemyType]?.auraRadius || 7;
+        const baseSize = enemy.baseSize || ENEMY_TYPES[enemy.enemyType]?.size || 0.5;
+        const scaleX = enemy.scale?.x || 1;
+        enemy.auraRing.position.y = -baseSize * scaleX + 0.05;
+        // Scale ring from 0 to auraRadius, then reset (sawtooth wave)
+        const scale = Math.max(0.01, enemy.auraRingPulse * auraRadius);
+        enemy.auraRing.scale.setScalar(scale);
+        const baseOpacity = enemy.anemoneCoreBroken ? 0.12 : 0.3;
+        enemy.auraRing.material.opacity = baseOpacity * (1 - enemy.auraRingPulse);  // Fade out as expands
     }
     
     // Apply pulse glow effect for glow/pulse profiles
@@ -2209,6 +2537,81 @@ function updatePillarHopperEnemy(enemy) {
     }
 }
 
+// Guardian Crab - support enemy that projects shields onto nearby allies
+function updateWardenSupportEnemy(enemy) {
+    const typeData = ENEMY_TYPES[enemy.enemyType];
+    const auraRadius = typeData.auraRadius || 7;
+    const maxShielded = typeData.maxShielded || 5;
+    const tuningMult = getEnemySpeedTuningMultiplier();
+    const auraActive = !enemy.anemoneCoreBroken;
+
+    // Movement: Seek centroid of nearby allies (not player)
+    const nearbyAllies = [];
+    for (const e of enemies) {
+        if (e !== enemy && e.health > 0 && enemy.position.distanceTo(e.position) < 15) {
+            nearbyAllies.push(e);
+        }
+    }
+
+    if (nearbyAllies.length >= 2) {
+        // Calculate centroid of nearby allies
+        let cx = 0, cz = 0;
+        for (const ally of nearbyAllies) {
+            cx += ally.position.x;
+            cz += ally.position.z;
+        }
+        cx /= nearbyAllies.length;
+        cz /= nearbyAllies.length;
+
+        // Move toward centroid (slower when near allies)
+        const dx = cx - enemy.position.x;
+        const dz = cz - enemy.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (dist > 0.1) {
+            const speedMult = nearbyAllies.length >= 3 ? 0.8 : 1.0;
+            enemy.position.x += (dx / dist) * enemy.speed * speedMult * tuningMult;
+            enemy.position.z += (dz / dist) * enemy.speed * speedMult * tuningMult;
+        }
+    } else {
+        // Fallback: Chase player if no allies nearby
+        updateChaseEnemy(enemy);
+    }
+
+    // Aura application: Grant shields to nearby unshielded allies
+    if (auraActive) {
+        let shieldedCount = 0;
+        for (const ally of enemies) {
+            if (ally === enemy || ally.health <= 0) continue;
+
+            const dist = enemy.position.distanceTo(ally.position);
+            if (dist <= auraRadius) {
+                // Grant shield if ally doesn't have one
+                if (!ally.shieldHP || ally.shieldHP <= 0) {
+                    if (shieldedCount < maxShielded) {
+                        ally.shieldHP = typeData.auraShieldHP || 12;
+                        ally.maxShieldHP = ally.shieldHP;
+                        ally.wardenSource = enemy;  // Track who granted it
+                        ally.shieldBroken = false;
+
+                        // Create shield visual (reuse existing function)
+                        if (!ally.shieldMesh) {
+                            ally.shieldMesh = createShieldBubble(ally, ally.size || ally.baseSize, 0x4488ff);
+                        }
+
+                        // Audio feedback
+                        PulseMusic.onShieldGrant();
+
+                        shieldedCount++;
+                    }
+                } else if (ally.wardenSource === enemy) {
+                    shieldedCount++;  // Count existing shields from this Warden
+                }
+            }
+        }
+    }
+}
+
 // Check if player is standing on a pillar
 function getPlayerPillar() {
     // Must be grounded or nearly grounded (not jumping/falling)
@@ -2241,6 +2644,53 @@ export function spawnEnemyProjectile(enemy, targetPos) {
     spawnEnemyProjectileFromPool(enemy.position, targetPos, enemy.damage * 0.5);
 }
 
+export function shatterWardenGrantedShields(warden, options = {}) {
+    const triggerSlowMoOnCascade = !!options.triggerSlowMo;
+    const playAudio = options.playAudio !== false; // default true
+
+    let shatteredCount = 0;
+
+    for (const ally of enemies) {
+        if (ally.wardenSource === warden && ally.shieldHP > 0) {
+            // Instantly remove shield
+            ally.shieldHP = 0;
+            ally.shieldBroken = true;
+            ally.wardenSource = null;
+
+            // Remove shield visual
+            if (ally.shieldMesh) {
+                ally.remove(ally.shieldMesh);
+                ally.shieldMesh.geometry = null;  // Don't dispose cached geometry
+                if (ally.shieldMesh.material) ally.shieldMesh.material.dispose();
+                ally.shieldMesh = null;
+            }
+
+            // Shatter VFX per protected enemy
+            spawnShieldBreakVFX(ally.position, 0x4488ff);
+
+            shatteredCount++;
+        }
+    }
+
+    // Single slow-mo + audio for the cascade (not per-enemy)
+    if (shatteredCount > 0) {
+        if (triggerSlowMoOnCascade) {
+            triggerSlowMo(8, 0.3);  // Slightly longer than normal shield break
+        }
+
+        if (playAudio && PulseMusic.onShieldCascade) {
+            PulseMusic.onShieldCascade(shatteredCount);
+        }
+
+        log('BOSS', 'warden_cascade', {
+            shattered: shatteredCount,
+            wardenPos: warden?.position ? { x: warden.position.x.toFixed(1), z: warden.position.z.toFixed(1) } : null
+        });
+    }
+
+    return shatteredCount;
+}
+
 // Handle enemy death effects (called from projectiles.js)
 export function handleEnemyDeath(enemy) {
     PulseMusic.onEnemyDeath(enemy);
@@ -2253,6 +2703,11 @@ export function handleEnemyDeath(enemy) {
     // Handle school leader death - promote follower or disband
     if (enemy.schoolId && enemy.isSchoolLeader) {
         handleSchoolLeaderDeath(enemy);
+    }
+
+    // Guardian Crab death cascade: shatter all shields this crab granted
+    if (enemy.enemyType === 'shielded' && enemy.behavior === 'wardenSupport') {
+        shatterWardenGrantedShields(enemy, { triggerSlowMo: true, playAudio: true });
     }
     
     // Spawn enemy-specific death VFX

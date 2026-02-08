@@ -8,7 +8,7 @@ export const LEADERBOARD_CONFIG = {
 };
 
 // Leaderboard entry structure
-export function createLeaderboardEntry(name, score, arena, wave, level, badges, time) {
+export function createLeaderboardEntry(name, score, arena, wave, level, badges, time, difficulty = 'normal') {
     return {
         name: name.substring(0, 3).toUpperCase(),  // 3 char max
         score: score,
@@ -17,6 +17,7 @@ export function createLeaderboardEntry(name, score, arena, wave, level, badges, 
         level: level,
         badges: badges || [],
         time: time,
+        difficulty: difficulty,
         date: new Date().toISOString()
     };
 }
