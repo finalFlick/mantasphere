@@ -4,7 +4,7 @@ This document provides guidance for AI agents and developers working on the Mant
 
 ## AI Agent Persona Entry Point
 
-- `AGENTS.md` is the entry point for persona-based behavior.
+- `PERSONAS.md` is the entry point for persona-based behavior.
 - If the correct persona is unclear, **start with Director (Orchestrator)** and triage from there.
 
 ## Game Identity
@@ -47,9 +47,35 @@ To avoid wrong implementations and wasted work, use **risk-based clarifying ques
 
 ### Examples (quick rubric)
 
-- **“Fix this one error in `js/systems/waveSystem.js`” + exact stack trace provided**: 0–2 questions (only if multiple plausible fixes).
-- **“Add a new enemy” without desired role/spawn arena/behavior**: 2–3 questions.
-- **“Rebalance Arena 3 difficulty” without target difficulty, metrics, or pain point**: 4–10 questions.
+- **"Fix this one error in `js/systems/waveSystem.js`" + exact stack trace provided**: 0–2 questions (only if multiple plausible fixes).
+- **"Add a new enemy" without desired role/spawn arena/behavior**: 2–3 questions.
+- **"Rebalance Arena 3 difficulty" without target difficulty, metrics, or pain point**: 4–10 questions.
+
+## Plan Completeness Requirements
+
+**Every plan must include administrative tasks checklist at the end:**
+
+```markdown
+---
+
+**Administrative Tasks:**
+- [ ] Update relevant documentation (docs/*.md, README.md, etc.)
+- [ ] Create/update GitHub issues via manta-warden bot identity
+- [ ] Search for existing GitHub Issues before starting work (per Rule 23)
+- [ ] Reference issue number in all commit messages (per Rule 23)
+- [ ] Update issue with completion comment after work (per Rule 23)
+```
+
+**Purpose:**
+- Ensures documentation stays in sync with code changes (per Documentation Maintenance Policy)
+- Maintains GitHub Issues as source of truth for work items (per Source of Truth Policy)
+- Enforces use of manta-warden bot identity for all GitHub operations
+
+**When to include:**
+- Code changes that affect system behavior → Update corresponding docs
+- New features/bugs discovered → Create GitHub Issues
+- Design decisions or scope changes → Document in GitHub Issues
+- Any changes to config files (enemies, bosses, arenas, etc.) → Update docs/*.md
 
 ## Critical Rules
 
@@ -608,8 +634,11 @@ function updateEnemy() {
 ```
 
 #### Game Loop Timing
-- **NEVER use Date.now() for game logic** - Use frame counters instead
-- **All timers should be frame-based**, not wall-clock time
+- **NEVER use Date.now() for game logic** - Use game-time or frame counters instead
+- **Simulation timing** must use `gameState.time.simSeconds` (scaled, pause-safe)
+- **UI chrome timing** should use `gameState.time.realSeconds` (unscaled)
+- **Run/leaderboard timing** uses `gameState.time.runSeconds` (stops during pause/cutscenes/announcements)
+- **Wall-clock exceptions** must be tagged: `// WALL_CLOCK_OK: <reason>`
 - **Slow-mo and lag must affect ALL game timing consistently**
 ```javascript
 // BAD - wall-clock time breaks during slow-mo/lag
@@ -898,6 +927,57 @@ log('SPAWN', 'enemy_spawned', { type: 'grunt', pos: { x, z } });
 2. Check state machine transitions (should see `wave_clear`)
 3. Look for `[SAFETY]` warnings
 
+### 18. Refactoring & Code Health
+
+#### File Size Guidelines
+
+- **Target:** <1,500 LOC per module
+- **Warning:** >2,000 LOC suggests splitting needed
+- **Mega-files:** >3,000 LOC should be split into focused modules
+
+#### Responsibility Separation
+
+Each module should have **one clear responsibility**:
+- `bossMeshFactory.js` - Creates boss meshes
+- `bossAI.js` - Boss behavior and state machine
+- `telegraphs.js` - Telegraph VFX creation/updates
+- `cinematic.js` - Camera sequences
+
+If a file handles multiple responsibilities, split it.
+
+#### Scene Graph Safety
+
+**NEVER access `children[index]`** - Use named properties instead:
+
+```javascript
+// BAD - brittle, breaks if child order changes
+marker.children[0].material.opacity = 0.5;
+marker.children[1].scale.set(2, 2, 2);
+
+// GOOD - explicit named references
+marker.innerCircle = new THREE.Mesh(...);
+marker.outerRing = new THREE.Mesh(...);
+marker.add(marker.innerCircle);
+marker.add(marker.outerRing);
+// Later:
+marker.innerCircle.material.opacity = 0.5;
+marker.outerRing.scale.set(2, 2, 2);
+```
+
+#### Refactoring Workflow
+
+1. **Create GitHub Issue** - Document scope, acceptance criteria, affected files
+2. **Plan backward compatibility** - Re-export from original file if needed
+3. **Split by responsibility** - One focused module per responsibility
+4. **Update imports systematically** - All at once or gradually
+5. **Verify no regressions** - Test all affected functionality
+6. **Update documentation** - Reflect new structure in docs
+
+#### Known Refactoring Candidates
+
+- `js/entities/boss.js` (~5,510 LOC) - Split into: mesh factory, AI, cutscenes, VFX glue
+- `js/systems/visualFeedback.js` (~3,070 LOC) - Split into: telegraphs, cinematic, slow-mo, cleanup
+
 ### 19. Version Management (Semantic Versioning)
 
 The project follows **Semantic Versioning 2.0.0** (MAJOR.MINOR.PATCH) tracked in the `VERSION` file.
@@ -930,13 +1010,13 @@ The project follows **Semantic Versioning 2.0.0** (MAJOR.MINOR.PATCH) tracked in
 **Before pushing to remote:**
 1. Review all commits since last version bump
 2. Determine highest severity change (MAJOR > MINOR > PATCH)
-3. Run `node scripts/bump-version.js X.Y.Z` to update all version references
+3. Run `node scripts/bump-version.cjs X.Y.Z` to update all version references
 4. Include version bump in final commit message: `chore: bump version to X.Y.Z`
 
-**Version Script (`scripts/bump-version.js`):**
+**Version Script (`scripts/bump-version.cjs`):**
 - Single source of truth: `js/config/constants.js`
 - Updates: `VERSION` file, `index.html` (loading screen, display, cache-buster)
-- Usage: `node scripts/bump-version.js 0.3.0`
+- Usage: `node scripts/bump-version.cjs 0.3.0`
 
 **Example Workflow:**
 ```bash
@@ -949,7 +1029,7 @@ git commit -m "fix: correct projectile collision bug"
 # Bug fix = PATCH bump
 # Result: MINOR bump wins (0.1.0 → 0.2.0)
 
-node scripts/bump-version.js 0.2.0
+node scripts/bump-version.cjs 0.2.0
 git add .
 git commit -m "chore: bump version to 0.2.0"
 git push
@@ -960,9 +1040,11 @@ git push
 **ALWAYS create GitHub tags when VERSION file changes.**
 
 ```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
+git tag X.Y.Z
+git push origin X.Y.Z
 ```
+
+**Rationale:** Tags use **bare semver** (no `v` prefix) to match version branch naming. During development you work on `0.3.x`; when releasing, the branch can be merged/deleted and the release tag is `0.3.0` (same version format, no mental translation).
 
 #### Version Branch Workflow
 
@@ -1201,3 +1283,127 @@ Use this exact structure:
 - Run `gh` commands without explicitly setting `GH_TOKEN` to the bot token first
 - Assume the default `gh` auth is acceptable for this project
 - Post comments, create issues, or modify labels as `finalFlick`
+
+### 23. GitHub Issue Tracking Enforcement
+
+**MANDATORY WORKFLOW: All features and bugfixes MUST be tracked in GitHub Issues.**
+
+#### 23.1 Pre-Work Checklist (Mandatory)
+
+**Before ANY code changes for features or bugfixes:**
+
+1. **Search for existing GitHub Issues:**
+   ```bash
+   gh issue list --search "<keywords>" --state all
+   ```
+   - Extract keywords from user request
+   - Search in open, closed, and merged states
+   - Check for duplicates or related issues
+
+2. **If issue exists:**
+   - Link to it in plan: "Working on #123: [title]"
+   - Read issue description, comments, and acceptance criteria
+   - If closed, ask user: "Issue #123 is closed. Reopen or create new?"
+
+3. **If NO issue exists:**
+   - **Bugfixes:** Create issue immediately (via manta-warden bot, per Rule 22)
+   - **Features:** Ask user: "No GitHub Issue found. Create one? (Recommended: Yes)"
+   - **Exception:** Skip only if user explicitly says "no issue needed" or "just fix it quickly"
+
+4. **Issue creation requirements:**
+   - Use manta-warden bot identity (Rule 22)
+   - Follow issue format from Rule 20 (persona-based analysis)
+   - Set labels: `type:bug`/`type:feature`, `area:*`, `priority:*`, `effort:*` (per CONTRIBUTING.md)
+   - Include acceptance criteria
+
+#### 23.2 During Work Requirements
+
+- **All commit messages MUST reference issue number:**
+  - Format: `<type>: <description> (#<issue-number>)`
+  - Types: `feat`, `fix`, `docs`, `refactor`, `tune`, `perf`, `chore`
+  - Examples:
+    - `fix: resolve projectile collision bug (#123)`
+    - `feat: add Arena 2 boss (#456)`
+    - `tune: adjust enemy spawn weights (#789)`
+
+- **If scope changes:** Comment on issue explaining the change
+- **If blocked:** Comment on issue with blocker details and what's needed
+
+#### 23.3 Post-Work Checklist (Mandatory)
+
+**After completing work:**
+
+1. **Update GitHub Issue with comment:**
+   ```bash
+   gh issue comment <NUMBER> --body "<formatted comment>"
+   ```
+
+2. **Comment format:**
+   ```
+   **Implementation Status: Complete**
+   
+   **Changes made:**
+   - [List key changes]
+   - [Files modified]
+   
+   **Testing notes:**
+   - [What was tested]
+   - [Known limitations]
+   
+   **Next steps:**
+   - [What needs verification]
+   - [If closing: "Ready to close after verification"]
+   ```
+
+3. **Update status label:**
+   - When starting: `gh issue edit <N> --add-label "status:in-progress"`
+   - When complete: `gh issue edit <N> --add-label "status:review" --remove-label "status:in-progress"`
+   - If blocked: `gh issue edit <N> --add-label "status:blocked"`
+
+4. **Link commits to issues:**
+   - Commit messages with `(#123)` auto-link on GitHub
+   - PRs should reference: `Closes #123` or `Fixes #123` in PR body
+
+#### 23.4 Issue Update Triggers
+
+**Update issues via comments when:**
+- Work starts: "Starting implementation of [feature]"
+- Work completes: "Implementation complete, ready for testing"
+- Work is blocked: "Blocked on [reason], need [help]"
+- Scope changes: "Scope expanded to include [X] based on [reason]"
+- Testing reveals issues: "Found edge case: [description], fixing..."
+- Ready to close: "All acceptance criteria met, ready to close"
+
+#### 23.5 Enforcement Exceptions
+
+**Skip issue tracking ONLY if:**
+- User explicitly says "no issue needed" or "just fix it quickly"
+- Trivial changes (typos, formatting, docs-only)
+- Emergency hotfixes (but create issue retroactively)
+
+**For all other work:**
+- No code changes without issue reference
+- No commits without issue number in message
+- No completion without issue update comment
+
+#### 23.6 Integration with Existing Rules
+
+- **Rule 20 (Source of Truth):** This enforces that policy
+- **Rule 20 (Issue Creation Process):** Ensures issues created with proper format
+- **Rule 22 (Bot Identity):** All issue operations use manta-warden bot
+- **Rule 19 (Version Management):** Issues can reference version milestones
+- **CONTRIBUTING.md:** Label taxonomy and issue templates guide issue creation
+
+#### 23.7 Verification Commands
+
+**Before committing, verify:**
+```bash
+# Check if issue exists
+gh issue list --search "<keywords>"
+
+# Check if commit message has issue reference
+git log --oneline -1 | grep -E "#\d+"
+
+# Verify bot token is set (PowerShell)
+echo $env:GH_TOKEN | Select-String "ghs_"
+```

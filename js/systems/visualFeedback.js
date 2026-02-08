@@ -1,4 +1,5 @@
 import { scene } from '../core/scene.js';
+import { gameState } from '../core/gameState.js';
 import { SLOW_MO_LERP_SPEED, SCREEN_FLASH_DEFAULT_DURATION } from '../config/constants.js';
 
 // Visual Feedback System - Centralized telegraph and success feedback
@@ -6,6 +7,11 @@ import { SLOW_MO_LERP_SPEED, SCREEN_FLASH_DEFAULT_DURATION } from '../config/con
 
 // ==================== GEOMETRY CACHE ====================
 // Cache frequently used geometries to prevent memory leaks
+
+function getSimMs() {
+    const simSeconds = gameState.time?.simSeconds;
+    return Number.isFinite(simSeconds) ? simSeconds * 1000 : 0;
+}
 
 const geometryCache = new Map();
 
@@ -151,7 +157,7 @@ export function createSlamMarker(position, radius = 6) {
     markerGroup.innerFill = innerFill;
     markerGroup.centerDot = centerDot;
     markerGroup.radius = radius;
-    markerGroup.createdTime = Date.now();
+    markerGroup.createdTime = getSimMs();
     markerGroup.isLocked = false;
     
     scene.add(markerGroup);
@@ -161,7 +167,7 @@ export function createSlamMarker(position, radius = 6) {
 export function updateSlamMarker(marker, isLocked = false) {
     if (!marker || !marker.outerRing) return;
     
-    const elapsed = (Date.now() - marker.createdTime) / 1000;
+    const elapsed = (getSimMs() - marker.createdTime) / 1000;
     marker.isLocked = isLocked;
     
     // Base pulse frequency increases when locked (urgency)
@@ -261,7 +267,7 @@ export function createPerchChargeVFX(boss) {
     group.innerRing = innerRing;
     group.arrow = arrow;
     group.bossSize = boss.size;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     
     // Position above boss
     group.position.copy(boss.position);
@@ -274,7 +280,7 @@ export function createPerchChargeVFX(boss) {
 export function updatePerchChargeVFX(vfx, progress, boss) {
     if (!vfx) return;
     
-    const elapsed = (Date.now() - vfx.createdTime) / 1000;
+    const elapsed = (getSimMs() - vfx.createdTime) / 1000;
     const bossSize = vfx.bossSize || 2.8;
     
     // Update position to follow boss
@@ -343,7 +349,7 @@ export function createTeleportOriginVFX(position) {
     }
     
     group.position.copy(position);
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     scene.add(group);
     
     return group;
@@ -549,7 +555,7 @@ export function createEmergeWarningVFX(position) {
     
     group.position.copy(position);
     group.position.y = 0.1;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.baseX = position.x;  // Store base position for shake
     group.baseZ = position.z;
     scene.add(group);
@@ -655,7 +661,7 @@ export function createBurrowStartVFX(boss) {
     
     group.position.copy(boss.position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     scene.add(group);
     
     return group;
@@ -1245,10 +1251,10 @@ export function createChargePathMarker(startPos, direction, length = 15) {
         flowOffset: 0,
         length: length,
         width: width,
-        createdAt: Date.now()
+        createdAt: getSimMs()
     };
     
-    group.createdAt = Date.now();
+    group.createdAt = getSimMs();
     group.lifespan = 2000;
     
     scene.add(group);
@@ -1258,7 +1264,7 @@ export function createChargePathMarker(startPos, direction, length = 15) {
 export function updateChargePathMarker(marker, progress = 0) {
     if (!marker) return;
     
-    const time = Date.now() * 0.001;  // Time in seconds
+    const time = getSimMs() * 0.001;  // Time in seconds
     const length = marker.userData.length || 15;
     const width = marker.userData.width || 5;
     
@@ -1401,7 +1407,7 @@ export function createHazardPreviewCircle(position, radius = 4) {
     group.add(icon);
     
     group.position.set(position.x, 0, position.z);
-    group.createdAt = Date.now();
+    group.createdAt = getSimMs();
     group.radius = radius;
     
     // Store explicit references for animation (avoid children index dependency)
@@ -1416,7 +1422,7 @@ export function createHazardPreviewCircle(position, radius = 4) {
 export function updateHazardPreviewCircle(marker) {
     if (!marker) return;
     
-    const elapsed = Date.now() - marker.createdAt;
+    const elapsed = getSimMs() - marker.createdAt;
     const pulse = 0.4 + Math.sin(elapsed * 0.008) * 0.3;
     
     // Pulse inner circle - use stored reference
@@ -1503,7 +1509,7 @@ export function createLaneWallPreview(position, angle, length = 20, height = 4) 
     
     group.position.copy(position);
     group.rotation.y = angle;
-    group.createdAt = Date.now();
+    group.createdAt = getSimMs();
     
     // Store references for animation (avoid children index dependency)
     group.wallMesh = wallMesh;
@@ -1519,7 +1525,7 @@ export function createLaneWallPreview(position, angle, length = 20, height = 4) 
 export function updateLaneWallPreview(marker, progress = 0) {
     if (!marker) return;
     
-    const elapsed = Date.now() - marker.createdAt;
+    const elapsed = getSimMs() - marker.createdAt;
     
     // Pulse speed increases as spawn approaches (urgency)
     const pulseSpeed = 0.01 + progress * 0.02;
@@ -1594,7 +1600,7 @@ export function createRushTelegraph(enemy, targetPos) {
     const angle = Math.atan2(direction.x, direction.z);
     group.rotation.y = angle;
     
-    group.createdAt = Date.now();
+    group.createdAt = getSimMs();
     group.parentEnemy = enemy;
     
     scene.add(group);
@@ -1608,7 +1614,7 @@ export function updateRushTelegraph(telegraph) {
     telegraph.position.copy(telegraph.parentEnemy.position);
     
     // Animate lines
-    const elapsed = Date.now() - telegraph.createdAt;
+    const elapsed = getSimMs() - telegraph.createdAt;
     telegraph.children.forEach((line, i) => {
         if (line.material) {
             line.material.opacity = 0.6 + Math.sin(elapsed * 0.02 + i) * 0.3;
@@ -1676,7 +1682,7 @@ export function createGrowthIndicator(boss) {
     group.outerRing = outerRing;
     group.bossSize = bossSize;
     group.bossColor = bossColor;
-    group.createdAt = Date.now();
+    group.createdAt = getSimMs();
     
     scene.add(group);
     return group;
@@ -1685,7 +1691,7 @@ export function createGrowthIndicator(boss) {
 export function updateGrowthIndicator(indicator, growthScale, boss) {
     if (!indicator || !boss) return;
     
-    const elapsed = (Date.now() - indicator.createdAt) / 1000;
+    const elapsed = (getSimMs() - indicator.createdAt) / 1000;
     const bossSize = indicator.bossSize;
     
     // Follow boss position
@@ -1791,7 +1797,7 @@ export function createSplitWarningVFX(boss) {
     group.spawnRing = spawnRing;
     group.spawnIndicators = spawnIndicators;
     group.bossSize = bossSize;
-    group.createdAt = Date.now();
+    group.createdAt = getSimMs();
     
     scene.add(group);
     return group;
@@ -1800,7 +1806,7 @@ export function createSplitWarningVFX(boss) {
 export function updateSplitWarningVFX(vfx, timer, maxTimer, boss) {
     if (!vfx || !boss) return;
     
-    const elapsed = (Date.now() - vfx.createdAt) / 1000;
+    const elapsed = (getSimMs() - vfx.createdAt) / 1000;
     const progress = timer / maxTimer;
     
     // Follow boss position
@@ -1941,7 +1947,7 @@ export function createComboTether(boss, targetPos) {
     group.boss = boss;
     group.targetPos = targetPos.clone();
     group.curve = curve;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     
     scene.add(group);
     return group;
@@ -2000,7 +2006,7 @@ export function updateComboTether(tether, newTargetPos = null) {
     
     // Pulse the tube opacity
     if (tether.tube) {
-        const age = (Date.now() - tether.createdTime) / 1000;
+        const age = (getSimMs() - tether.createdTime) / 1000;
         tether.tube.material.opacity = 0.4 + 0.2 * Math.sin(age * 6);
     }
 }
@@ -2069,7 +2075,7 @@ export function createComboLockInMarker(position) {
     
     group.position.copy(position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     scene.add(group);
     
     return group;
@@ -2082,7 +2088,7 @@ export function createComboLockInMarker(position) {
 export function updateComboLockInMarker(marker) {
     if (!marker) return;
     
-    const age = (Date.now() - marker.createdTime) / 1000;
+    const age = (getSimMs() - marker.createdTime) / 1000;
     
     // Pulse outer ring
     if (marker.outerRing) {
@@ -2128,7 +2134,7 @@ export function createMinionTether(boss, minion, color) {
     tether.boss = boss;
     tether.minion = minion;
     tether.tetherColor = color;
-    tether.createdTime = Date.now();
+    tether.createdTime = getSimMs();
     
     scene.add(tether);
     return tether;
@@ -2142,7 +2148,7 @@ export function createMinionTether(boss, minion, color) {
 export function updateMinionTethers(boss, tethers) {
     if (!tethers || !boss) return;
     
-    const age = (Date.now() - (boss.shieldStartTime || Date.now())) / 1000;
+    const age = (getSimMs() - (boss.shieldStartTime || getSimMs())) / 1000;
     
     for (const tether of tethers) {
         if (!tether || !tether.minion || !tether.minion.parent) continue;
@@ -2202,7 +2208,7 @@ export function createTetherSnapVFX(position, color) {
     }
     
     group.position.set(0, 0, 0);
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.lifespan = 500; // 0.5 seconds
     scene.add(group);
     
@@ -2217,7 +2223,7 @@ export function createTetherSnapVFX(position, color) {
 export function updateTetherSnapVFX(vfx) {
     if (!vfx || !vfx.sparks) return true;
     
-    const age = Date.now() - vfx.createdTime;
+    const age = getSimMs() - vfx.createdTime;
     if (age > vfx.lifespan) return true;
     
     const progress = age / vfx.lifespan;
@@ -2298,7 +2304,7 @@ export function createTeleportDecoy(position, isReal = false) {
     group.isReal = isReal;
     group.position.copy(position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     
     scene.add(group);
     return group;
@@ -2311,7 +2317,7 @@ export function createTeleportDecoy(position, isReal = false) {
 export function updateTeleportDecoy(decoy) {
     if (!decoy) return;
     
-    const age = (Date.now() - decoy.createdTime) / 1000;
+    const age = (getSimMs() - decoy.createdTime) / 1000;
     
     // Rotate sigil
     if (decoy.sigil) {
@@ -2376,7 +2382,7 @@ export function createBlinkBarrageMarker(position, index) {
     group.index = index;
     group.position.copy(position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     
     scene.add(group);
     return group;
@@ -2389,7 +2395,7 @@ export function createBlinkBarrageMarker(position, index) {
 export function updateBlinkBarrageMarker(marker) {
     if (!marker) return;
     
-    const age = (Date.now() - marker.createdTime) / 1000;
+    const age = (getSimMs() - marker.createdTime) / 1000;
     
     // Gentle rotation
     marker.rotation.y += 0.02;
@@ -2402,7 +2408,7 @@ export function updateBlinkBarrageMarker(marker) {
 // ==================== HAZARD DETONATION VFX ====================
 
 /**
- * Creates a detonation warning around a hazard (Monolith P3)
+ * Creates a detonation warning around a hazard (Shieldfather P3)
  * @param {THREE.Vector3} position - The hazard center position
  * @param {number} currentRadius - The current hazard radius
  * @param {number} detonationRadius - The expanded detonation radius (typically 3x)
@@ -2460,7 +2466,7 @@ export function createDetonationWarningVFX(position, currentRadius, detonationRa
     
     group.position.copy(position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.detonationRadius = detonationRadius;
     
     scene.add(group);
@@ -2477,7 +2483,7 @@ export function updateDetonationWarningVFX(vfx, progress) {
     
     // Pulse faster as detonation approaches
     const pulseSpeed = 3 + progress * 10;
-    const pulse = Math.sin(Date.now() * 0.001 * pulseSpeed);
+    const pulse = Math.sin(getSimMs() * 0.001 * pulseSpeed);
     
     // Outer ring scale and opacity
     if (vfx.outerRing) {
@@ -2556,7 +2562,7 @@ export function createBurrowPath(startPos, endPos) {
     group.add(arrow);
     group.arrow = arrow;
     
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.startPos = startPos.clone();
     group.endPos = endPos.clone();
     
@@ -2571,7 +2577,7 @@ export function createBurrowPath(startPos, endPos) {
 export function updateBurrowPath(path) {
     if (!path || !path.dots) return;
     
-    const age = (Date.now() - path.createdTime) / 1000;
+    const age = (getSimMs() - path.createdTime) / 1000;
     
     // Animate dots (wave effect moving toward destination)
     path.dots.forEach((dot, i) => {
@@ -2625,7 +2631,7 @@ export function createFakeEmergeMarker(position) {
     
     group.position.copy(position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.isFake = true;
     
     scene.add(group);
@@ -2639,7 +2645,7 @@ export function createFakeEmergeMarker(position) {
 export function updateFakeEmergeMarker(marker) {
     if (!marker) return;
     
-    const age = (Date.now() - marker.createdTime) / 1000;
+    const age = (getSimMs() - marker.createdTime) / 1000;
     
     // Subtle pulse (less intense than real)
     if (marker.pulse) {
@@ -2717,7 +2723,7 @@ export function createVineZone(position, radius, duration = 5.0) {
     
     group.position.copy(position);
     group.position.y = 0;
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.duration = duration * 1000;
     group.radius = radius;
     group.isDamageZone = true;
@@ -2736,7 +2742,7 @@ export function createVineZone(position, radius, duration = 5.0) {
 export function updateVineZone(zone) {
     if (!zone) return true;
     
-    const age = Date.now() - zone.createdTime;
+    const age = getSimMs() - zone.createdTime;
     if (age > zone.duration) return true;
     
     const progress = age / zone.duration;
@@ -2790,7 +2796,7 @@ export function createChargeTrailSegment(position, color, duration = 2.0) {
     trail.position.copy(position);
     trail.position.y = 0.1;
     
-    trail.createdTime = Date.now();
+    trail.createdTime = getSimMs();
     trail.duration = duration * 1000;
     trail.isDamageZone = true;
     trail.damageRadius = 1.5;
@@ -2808,7 +2814,7 @@ export function createChargeTrailSegment(position, color, duration = 2.0) {
 export function updateChargeTrailSegment(trail) {
     if (!trail) return true;
     
-    const age = Date.now() - trail.createdTime;
+    const age = getSimMs() - trail.createdTime;
     if (age > trail.duration) return true;
     
     const progress = age / trail.duration;
@@ -2992,7 +2998,7 @@ export function createWallImpactVFX(position, wallNormal, color = 0xff4444) {
     flash.name = 'flash';
     group.add(flash);
     
-    group.createdTime = Date.now();
+    group.createdTime = getSimMs();
     group.duration = 500; // 0.5 seconds
     group.isWallImpact = true;
     
@@ -3008,7 +3014,7 @@ export function createWallImpactVFX(position, wallNormal, color = 0xff4444) {
 export function updateWallImpactVFX(vfx) {
     if (!vfx || !vfx.isWallImpact) return true;
     
-    const age = Date.now() - vfx.createdTime;
+    const age = getSimMs() - vfx.createdTime;
     if (age > vfx.duration) return true;
     
     const progress = age / vfx.duration;

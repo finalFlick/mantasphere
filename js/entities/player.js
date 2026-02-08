@@ -1,15 +1,17 @@
 import { scene, camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { keys, cameraAngleX, cameraAngleY } from '../core/input.js';
-import { obstacles, hazardZones, enemies, tempVec3, tempVec3_2, tempVec3_3, tempVec3_4, tempVec3_5 } from '../core/entities.js';
+import { obstacles, hazardZones, enemies, getCurrentBoss, tempVec3, tempVec3_2, tempVec3_3, tempVec3_4, tempVec3_5 } from '../core/entities.js';
 import { PLAYER_JUMP_VELOCITY, PLAYER_GRAVITY, BOUNCE_FACTORS, TRAIL_SPAWN_DISTANCE, WAVE_STATE } from '../config/constants.js';
 import { TUNING } from '../config/tuning.js';
 import { spawnParticle } from '../effects/particles.js';
 import { spawnTrail, lastTrailPos, setLastTrailPos } from '../effects/trail.js';
 import { takeDamage } from '../systems/damage.js';
-import { triggerSlowMo, triggerScreenFlash } from '../systems/visualFeedback.js';
-import { getLastShot, getFireRate } from '../systems/projectiles.js';
+import { cleanupVFX, createChargeTrailSegment, triggerSlowMo, triggerScreenFlash, updateChargeTrailSegment } from '../systems/visualFeedback.js';
+import { getLastShot, getFireRate, applyDashStrikeDamageToEnemy, applyDashStrikeDamageToBoss } from '../systems/projectiles.js';
+import { PulseMusic } from '../systems/pulseMusic.js';
 import { safeFlashMaterial } from '../systems/materialUtils.js';
+import { spawnBubbleParticle } from '../effects/particles.js';
 
 export let player = null;
 export let isDashing = false;
@@ -22,6 +24,14 @@ let isDashStriking = false;
 let dashStrikeStartPos = new THREE.Vector3();
 let dashStrikeTargetPos = new THREE.Vector3();
 let dashStrikeProgress = 0;
+let dashStrikeHitEnemies = new Set();
+let dashStrikeHitBoss = false;
+const DASH_STRIKE_GRACE_FRAMES = 15;
+const dashStrikeLastTrailPos = new THREE.Vector3();
+const dashStrikeBubbleEmitter = {
+    position: new THREE.Vector3(),
+    chargeDirection: new THREE.Vector3()
+};
 
 // Lean animation state
 let currentLeanX = 0;  // forward/back lean (W/S)
@@ -246,6 +256,8 @@ export function createPlayer() {
     player.isRecovering = false;
     player.recoveryTimer = 0;
     player.flashPhase = 0;
+    player.isDashStrikeInvuln = false;
+    player.dashStrikeGraceFrames = 0;
     
     return player;
 }
@@ -298,28 +310,29 @@ export function updatePlayer(delta) {
         dashCooldownFrames--;
     }
     
-    // Check for dash/Dash Strike input
+    // Check for Dash Strike input (dash is unlocked via Boss 1 module; no default dash)
     if (!isLandingStunned && (keys['ShiftLeft'] || keys['ShiftRight']) && moveDir.length() > 0) {
         // If Dash Strike is enabled and off cooldown, use it
         if (gameState.dashStrikeEnabled && gameState.dashStrikeCooldownTimer <= 0) {
             startDashStrike(moveDir);
-        }
-        // Otherwise, regular dash (if available) - 60 frame cooldown (1 second)
-        else if (!gameState.dashStrikeEnabled && dashCooldownFrames <= 0) {
-            isDashing = true;
-            dashCooldownFrames = 60;  // 1 second cooldown
-            dashActiveFrames = 0;     // Reset dash duration counter
-            dashDirection.copy(moveDir);
-
-            // Tutorial tracking
-            gameState.tutorial = gameState.tutorial || {};
-            gameState.tutorial.hasDashed = true;
         }
     }
     
     const oldX = player.position.x;
     const oldZ = player.position.z;
     const oldY = player.position.y;
+    
+    // Update Dash Strike trail VFX (even after dash ends, so they fade out cleanly)
+    if (player.dashStrikeTrails && player.dashStrikeTrails.length > 0) {
+        for (let i = player.dashStrikeTrails.length - 1; i >= 0; i--) {
+            const trail = player.dashStrikeTrails[i];
+            const shouldRemove = updateChargeTrailSegment(trail);
+            if (shouldRemove) {
+                cleanupVFX(trail);
+                player.dashStrikeTrails.splice(i, 1);
+            }
+        }
+    }
     
     // Handle Dash Strike movement
     if (isDashStriking) {
@@ -332,10 +345,74 @@ export function updatePlayer(delta) {
             // Interpolate position
             player.position.lerpVectors(dashStrikeStartPos, dashStrikeTargetPos, dashStrikeProgress);
             
-            // Trail particles during dash
-            if (Math.random() > 0.5) {
-                spawnParticle(player.position.clone(), 0x00ffff, 2);
+            // Boss-1-style dash trail: ground segments + bubbles
+            // Drop trail segments roughly every ~2 units
+            if (player.dashStrikeTrails) {
+                const distFromLastTrail = player.position.distanceTo(dashStrikeLastTrailPos);
+                if (distFromLastTrail > 2.0 || dashStrikeLastTrailPos.length() === 0) {
+                    const trail = createChargeTrailSegment(player.position.clone(), 0x00ffff, 1.0);
+                    // Player trail is visual-only (no hazard damage)
+                    trail.isDamageZone = false;
+                    trail.damage = 0;
+                    player.dashStrikeTrails.push(trail);
+                    dashStrikeLastTrailPos.copy(player.position);
+                }
             }
+            
+            // Bubble trail (reuse boss bubble look with a lightweight emitter object)
+            if (Math.random() > 0.35) {
+                dashStrikeBubbleEmitter.position.copy(player.position);
+                dashStrikeBubbleEmitter.chargeDirection.copy(tempVec3_4.subVectors(dashStrikeTargetPos, dashStrikeStartPos).normalize());
+                spawnBubbleParticle(dashStrikeBubbleEmitter);
+            }
+            
+            // Damage enemies during transit (hit once per dash)
+            const damage = gameState.dashStrikeConfig?.damage || 15;
+            const hitRadius = 1.2;
+            
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                if (!enemy || enemy.isDying) continue;
+                if (dashStrikeHitEnemies.has(enemy)) continue;
+                
+                const enemyRadius = (enemy.baseSize || 1) * (enemy.scale?.x || 1) * 0.85;
+                if (player.position.distanceTo(enemy.position) < enemyRadius + hitRadius) {
+                    dashStrikeHitEnemies.add(enemy);
+                    
+                    applyDashStrikeDamageToEnemy(enemy, damage, player.position, i);
+                    
+                    // Knockback a bit so the hit reads
+                    if (enemy.velocity) {
+                        tempVec3_5.subVectors(enemy.position, player.position).setY(0);
+                        if (tempVec3_5.lengthSq() > 0.0001) {
+                            tempVec3_5.normalize();
+                            enemy.velocity.add(tempVec3_5.multiplyScalar(0.18));
+                        }
+                    }
+                }
+            }
+            
+            // Also allow Dash Strike to hit the boss (once per dash)
+            const boss = getCurrentBoss();
+            if (boss && !boss.isDying && !dashStrikeHitBoss) {
+                const bossRadius = (boss.size || 1) * (boss.scale?.x || 1);
+                if (player.position.distanceTo(boss.position) < bossRadius + hitRadius) {
+                    applyDashStrikeDamageToBoss(boss, damage, player.position);
+                    dashStrikeHitBoss = true;
+                }
+            }
+        }
+    }
+    
+    // Dash Strike landing grace (invuln against enemies/projectiles only)
+    if (!isDashStriking && player.isDashStrikeInvuln) {
+        if (player.dashStrikeGraceFrames > 0) {
+            player.dashStrikeGraceFrames--;
+            if (player.dashStrikeGraceFrames <= 0) {
+                player.isDashStrikeInvuln = false;
+            }
+        } else {
+            player.isDashStrikeInvuln = false;
         }
     }
     // Handle regular dash (frame-based duration: 12 frames = ~200ms)
@@ -553,7 +630,7 @@ export function updatePlayer(delta) {
     
     // Update charge ring
     if (player.chargeRingMat) {
-        const now = Date.now();
+        const now = Date.now(); // WALL_CLOCK_OK: UI charge ring visual only
         const lastShot = getLastShot();
         const fireRate = getFireRate();
         
@@ -662,6 +739,8 @@ export function resetPlayer() {
         player.isRecovering = false;
         player.recoveryTimer = 0;
         player.flashPhase = 0;
+    player.isDashStrikeInvuln = false;
+    player.dashStrikeGraceFrames = 0;
         if (player.bodyMaterial) {
             player.bodyMaterial.opacity = 1;
             player.bodyMaterial.transparent = false;
@@ -688,6 +767,7 @@ export function resetPlayer() {
     isDashing = false;
     isDashStriking = false;
     dashStrikeProgress = 0;
+    dashStrikeHitBoss = false;
     dashCooldownFrames = 0;
     dashActiveFrames = 0;
     currentLeanX = 0;
@@ -709,6 +789,14 @@ function startDashStrike(direction) {
     
     isDashStriking = true;
     dashStrikeProgress = 0;
+    dashStrikeHitEnemies.clear();
+    dashStrikeHitBoss = false;
+    dashStrikeLastTrailPos.set(0, 0, 0);
+    player.isDashStrikeInvuln = true;
+    player.dashStrikeGraceFrames = 0;
+    
+    // Ensure player has a trail list for cleanup
+    player.dashStrikeTrails = player.dashStrikeTrails || [];
 
     // Tutorial tracking (Dash Strike still teaches "dash as an option")
     gameState.tutorial = gameState.tutorial || {};
@@ -736,6 +824,13 @@ function startDashStrike(direction) {
     
     // Spawn trail particles at start
     spawnParticle(player.position.clone(), 0x00ffff, 8);
+    
+    // SFX
+    PulseMusic.onDashStrikeStart?.();
+    const rightX = Math.cos(cameraAngleX);
+    const rightZ = -Math.sin(cameraAngleX);
+    const pan = Math.max(-1, Math.min(1, direction.x * rightX + direction.z * rightZ));
+    PulseMusic.onDashStrikeTelegraph?.(pan, 1);
 }
 
 /**
@@ -743,6 +838,10 @@ function startDashStrike(direction) {
  */
 function completeDashStrike() {
     isDashStriking = false;
+    player.dashStrikeGraceFrames = DASH_STRIKE_GRACE_FRAMES;
+    if (player.dashStrikeGraceFrames <= 0) {
+        player.isDashStrikeInvuln = false;
+    }
     
     // Place player at target
     player.position.copy(dashStrikeTargetPos);
@@ -752,34 +851,35 @@ function completeDashStrike() {
     const damageRadius = 4;  // AoE radius
     
     let hitCount = 0;
-    for (const enemy of enemies) {
-        if (enemy.isDying) continue;
+    
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        if (!enemy || enemy.isDying) continue;
+        if (dashStrikeHitEnemies.has(enemy)) continue; // avoid double-hitting enemies we clipped during transit
         
-        const dist = enemy.position.distanceTo(player.position);
-        if (dist < damageRadius) {
-            // Deal damage to enemy
-            enemy.health -= damage;
-            hitCount++;
-            
-            // Spawn hit VFX
-            spawnParticle(enemy.position.clone(), 0x00ffff, 5);
-            
-            // Flash enemy (frame-based timing via safeFlashMaterial)
-            if (enemy.baseMaterial) {
-                safeFlashMaterial(
-                    enemy.baseMaterial, 
-                    enemy, 
-                    0x00ffff,  // Flash color
-                    enemy.baseColor || 0xff4444,  // Reset color
-                    0.3,  // Reset emissive intensity
-                    100  // Duration (converted to frames internally)
-                );
-            }
+        if (enemy.position.distanceTo(player.position) < damageRadius) {
+            dashStrikeHitEnemies.add(enemy);
+            const result = applyDashStrikeDamageToEnemy(enemy, damage, player.position, i);
+            if (result.hit) hitCount++;
+        }
+    }
+    
+    // Boss AoE at impact (avoid double-hit if clipped during transit)
+    const boss = getCurrentBoss();
+    if (boss && !boss.isDying && !dashStrikeHitBoss) {
+        const bossRadius = (boss.size || 1) * (boss.scale?.x || 1);
+        if (boss.position.distanceTo(player.position) < bossRadius + damageRadius) {
+            const result = applyDashStrikeDamageToBoss(boss, damage, player.position);
+            if (result.hit) hitCount++;
+            dashStrikeHitBoss = true;
         }
     }
     
     // Impact VFX
     spawnParticle(player.position.clone(), 0x00ffff, 12);
+    
+    // SFX
+    PulseMusic.onDashStrikeImpact?.(hitCount);
     
     // Extra feedback if we hit something
     if (hitCount > 0) {

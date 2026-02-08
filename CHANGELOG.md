@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - 15 GitHub Issues migrated from BACKLOG.md
-- 3 GitHub Milestones (v0.3.0, v0.4.0, v0.5.0)
+- 3 GitHub Milestones (0.3.x, 0.4.x, 0.5.x series)
 
 ## [0.2.0] - 2026-01-15
 

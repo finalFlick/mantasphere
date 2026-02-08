@@ -151,15 +151,16 @@ When landing from a jump, the player bounces up to 3 times with diminishing heig
 **Targeting Mode:** Automatic lock-on within forward arc
 
 **Target Selection:**
-1. Find all enemies within 180° forward arc
-2. Filter by max range (25 units)
-3. Sort by distance (nearest first)
-4. Select up to `projectileCount` targets
+1. Find all enemies within 180° forward arc (dot >= 0)
+2. **Close-range override:** Enemies within 3 units are always targetable regardless of facing
+3. Filter by max range (25 units)
+4. Sort by distance (nearest first)
+5. Select up to `projectileCount` targets
 
 **Forward Arc Calculation:**
 - Uses dot product of player forward direction
-- Only positive dot values (0° to 180°)
-- Prevents shooting behind
+- Positive or zero dot values (0° to 180°, inclusive of perpendicular)
+- **Close-range override**: dot check skipped for enemies within 3 units (prevents point-blank misses)
 
 **Target Priority:** Distance only (no threat-based priority)
 
@@ -177,8 +178,17 @@ When landing from a jump, the player bounces up to 3 times with diminishing heig
 - Speed: 0.8 × projectileSpeed stat
 - Damage: Base damage stat
 - Color: Cyan (0x44ffff)
-- Lifespan: 120 frames (2 seconds)
+- Lifespan: 120 frames (2 seconds, sim-time)
 - Max Range: 25 units from spawn position
+
+**Timing Note:**
+- Projectile movement and lifespan scale with delta (pause/slow-mo safe)
+
+**Mild Homing:**
+- Projectiles steer toward their target each frame at a low turn rate (~0.04 rad/frame)
+- If the target dies mid-flight, the projectile flies straight
+- Prevents small/fast enemies from trivially dodging auto-fired shots
+- Forward arc still matters — homing only adjusts trajectory, not acquisition
 
 **Multi-Shot:**
 - Each projectile homes to nearest target in arc
@@ -190,6 +200,13 @@ When landing from a jump, the player bounces up to 3 times with diminishing heig
 - Pre-created at game start
 - Reuses oldest when pool exhausted
 - Prevents memory leaks
+
+**Projectile Item Modifiers:**
+Items collected from chests can modify projectile behavior:
+- **Pierce**: Projectile passes through 1 extra target before being consumed
+- **Chain**: On hit, a secondary bolt arcs to 1 nearby enemy (50% damage, 12-unit range)
+- **Explosion**: On hit, deals 40% AoE damage within 3-unit radius
+- **Combo — Razor Swarm**: Having both Pierce and Chain active
 
 ---
 
@@ -312,9 +329,9 @@ Modules are persistent upgrades that carry across runs and feature mastery progr
 **Unlock:** Defeat Boss 1 (Red Puffer King) Phase 3
 
 **Mastery Levels:**
-- **L1 (1 kill):** 8 range, 5s cooldown, 15 damage
-- **L2 (5 kills):** 10 range, 4s cooldown, 20 damage
-- **L3 (15 kills):** 12 range, 3s cooldown, 25 damage
+- **L1 (1 kill):** 16 range, 5s cooldown, 15 damage
+- **L2 (5 kills):** 20 range, 4s cooldown, 20 damage
+- **L3 (15 kills):** 24 range, 3s cooldown, 25 damage
 
 **Type:** Active ability (press Shift to dash)
 
@@ -322,8 +339,12 @@ Modules are persistent upgrades that carry across runs and feature mastery progr
 
 **Behavior:**
 - Dash in current movement direction
-- Deal AoE damage at impact point
+- Damage enemies you pass through (each enemy can be hit once per dash)
+- Deal AoE damage at impact point (won't double-hit enemies already clipped during transit)
+- Invulnerable to enemy/boss contact and projectiles during dash + brief landing grace (hazards still damage)
 - Cooldown displayed in UI
+- Leaves a Boss 1-style cyan ground trail + bubbles during the dash for readability
+- Plays a short target ping at dash start to help read the landing direction
 
 ---
 
@@ -333,11 +354,11 @@ Modules are persistent upgrades that carry across runs and feature mastery progr
 
 **First Level-Up:** 10 XP required
 
-**XP Scaling:** Each level requires 10 more XP than previous
+**XP Scaling:** XP to next level increases by 1.25x (rounded down)
 - Level 1 → 2: 10 XP
-- Level 2 → 3: 20 XP
-- Level 3 → 4: 30 XP
-- etc.
+- Level 2 → 3: 12 XP
+- Level 3 → 4: 15 XP
+- Level 4 → 5: 18 XP
 
 **Level-Up Process:**
 1. Collect XP from defeated enemies
@@ -538,6 +559,10 @@ if (hz.tickTimer >= hz.damageTickInterval) {
 ---
 
 ## Controls Reference
+
+### In-Game Controls Overlay (HUD)
+
+During gameplay, a small key-cap diagram appears in the **bottom-right** of the screen showing **WASD**, **SPACE**, and **SHIFT**. Keys **light up while pressed** to confirm the game is receiving your inputs. The overlay hides while paused.
 
 ### Keyboard
 

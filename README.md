@@ -47,8 +47,8 @@ Then open http://localhost:8080
 
 Push a version tag to trigger GitHub Actions:
 ```bash
-git tag v0.2.5
-git push origin v0.2.5
+git tag 0.2.5
+git push origin 0.2.5
 ```
 Then pull on Unraid: `ghcr.io/finalflick/mantasphere:latest`
 
@@ -99,7 +99,7 @@ Arenas teach mechanics progressively with **tiered wave counts** for faster earl
 Bosses are **puzzle tests** of learned mechanics, not just damage sponges:
 
 - **Red Puffer King** - Charges and summons; tests dodging
-- **The Monolith** - Creates hazard pools; tests positioning
+- **The Shieldfather** - Jump slams and hazards; tests cover vs. traps
 - **The Ascendant** - Warps around; tests prediction
 - **The Overgrowth** - Grows and splits; tests priority management
 - **The Burrower** - Burrows underground; tests awareness
@@ -193,6 +193,25 @@ Procedural music that adapts to gameplay in real-time:
         └── rosterUI.js     # Enemy roster display
 ```
 
+## Architecture Overview
+
+MantaSphere uses a **framework-light** architecture organized by responsibility:
+
+- **Core** (`js/core/`) - Shared state, entities arrays, scene setup, input handling
+- **Entities** (`js/entities/`) - Player, enemies, bosses (behavior + per-frame updates)
+- **Systems** (`js/systems/`) - Cross-cutting subsystems (combat, VFX, waves, music)
+- **UI** (`js/ui/`) - DOM HUD/menus/roster/leaderboard
+- **Config** (`js/config/`) - Content tables (arenas/enemies/bosses/upgrades)
+- **Arena** (`js/arena/`) - Procedural geometry generation
+- **Effects** (`js/effects/`) - Reusable visual effect pools
+
+**Key Metrics:**
+- Total core game files: ~35
+- Largest files: `boss.js` (~5,510 LOC), `visualFeedback.js` (~3,070 LOC)
+- Timing model: `simSeconds` (gameplay), `realSeconds` (UI chrome), `runSeconds` (leaderboard)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for refactoring guidelines.
+
 ## Development
 
 ### Adding New Content
@@ -242,8 +261,8 @@ docker-compose up --build  # Build and run container (self-contained)
 
 2. Push a version tag:
    ```bash
-   git tag v0.2.5
-   git push origin v0.2.5
+   git tag 0.2.5
+   git push origin 0.2.5
    ```
 
 3. GitHub Actions builds the image and pushes to `ghcr.io`

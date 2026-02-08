@@ -100,6 +100,66 @@
         
         /* Kill Counter */
         #kill-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 30px; border-radius: 20px; color: white; font-size: 18px; z-index: 100; }
+
+        /* Controls Overlay (Bottom-Right) */
+        #controls-overlay {
+            position: absolute;
+            bottom: 44px;
+            right: 18px;
+            z-index: 100;
+            pointer-events: none;
+            display: none; /* shown only during gameplay */
+            opacity: 0.45;
+            user-select: none;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        #controls-overlay .controls-row {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        #controls-overlay .controls-row.controls-row-wide {
+            justify-content: space-between;
+        }
+        #controls-overlay .ctrl-key {
+            min-width: 34px;
+            height: 34px;
+            padding: 0 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.65);
+            border: 2px solid rgba(255, 255, 255, 0.18);
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+            transition: opacity 80ms ease, border-color 80ms ease, box-shadow 80ms ease, background 80ms ease, color 80ms ease, transform 80ms ease;
+        }
+        #controls-overlay .ctrl-key.ctrl-wide {
+            min-width: 84px;
+            justify-content: center;
+        }
+        #controls-overlay .ctrl-key.active {
+            opacity: 1;
+            background: rgba(0, 255, 255, 0.10);
+            border-color: rgba(0, 255, 255, 0.55);
+            box-shadow: 0 0 12px rgba(0, 255, 255, 0.22), 0 6px 18px rgba(0, 0, 0, 0.35);
+            color: #eaffff;
+            transform: translateY(-1px);
+        }
+        #controls-overlay .ctrl-mouse {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.55);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+        }
         
         /* Damage Flash */
         #damage-flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 0, 0, 0.3); pointer-events: none; opacity: 0; z-index: 50; transition: opacity 0.1s ease; }
@@ -428,6 +488,25 @@
         
         <div id="crosshair"></div>
         <div id="kill-counter">Kills: <span id="kills">0</span></div>
+
+        <!-- Controls Overlay (Bottom-Right) -->
+        <div id="controls-overlay" aria-hidden="true">
+            <div class="controls-row">
+                <span class="ctrl-key" data-key="KeyW">W</span>
+            </div>
+            <div class="controls-row">
+                <span class="ctrl-key" data-key="KeyA">A</span>
+                <span class="ctrl-key" data-key="KeyS">S</span>
+                <span class="ctrl-key" data-key="KeyD">D</span>
+            </div>
+            <div class="controls-row controls-row-wide">
+                <span class="ctrl-key ctrl-wide" data-key="Shift">SHIFT</span>
+                <span class="ctrl-key ctrl-wide" data-key="Space">SPACE</span>
+            </div>
+            <div class="controls-row">
+                <span class="ctrl-mouse">MOUSE</span>
+            </div>
+        </div>
         
         <!-- Announcements -->
         <div id="wave-announcement">
@@ -544,7 +623,7 @@
                     <span class="debug-label">Enemy Type:</span>
                     <select id="debug-enemy-select" class="debug-select">
                         <option value="grunt">Grunt</option>
-                        <option value="shielded">Shielded</option>
+                        <option value="shielded">Guardian Crab</option>
                         <option value="fastBouncer">Fast Bouncer</option>
                         <option value="splitter">Splitter</option>
                         <option value="teleporter">Teleporter</option>
@@ -556,23 +635,12 @@
             </div>
             
             <div class="debug-section">
-                <h3>Warp to Arena/Wave</h3>
-                <div class="debug-row">
-                    <span class="debug-label">Arena:</span>
-                    <input type="number" id="debug-warp-arena" class="debug-input" min="1" max="6" value="1">
-                    <span class="debug-label">Wave:</span>
-                    <input type="number" id="debug-warp-wave" class="debug-input" min="1" max="10" value="1">
-                    <button id="debug-warp-btn" class="debug-btn">Warp</button>
-                </div>
-            </div>
-            
-            <div class="debug-section">
                 <h3>Start Boss Battle</h3>
                 <div class="debug-row">
                     <span class="debug-label">Boss Type:</span>
                     <select id="debug-boss-select" class="debug-select">
                         <option value="1">Boss 1 - The Gatekeeper</option>
-                        <option value="2">Boss 2 - The Monolith</option>
+                        <option value="2">Boss 2 - The Shieldfather</option>
                         <option value="3">Boss 3 - The Ascendant</option>
                         <option value="4">Boss 4 - The Overgrowth</option>
                         <option value="5">Boss 5 - The Burrower</option>
@@ -608,11 +676,6 @@
                     <span class="debug-label">Gravity</span>
                     <input id="debug-tuning-gravity" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
                     <span id="debug-tuning-gravity-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">XP Despawn</span>
-                    <input id="debug-tuning-xp-despawn" class="debug-slider" type="range" min="5" max="40" step="1" value="15">
-                    <span id="debug-tuning-xp-despawn-value" class="debug-value">15s</span>
                 </div>
                 <div class="debug-controls" style="margin-top: 10px;">
                     <button id="debug-tuning-reset" class="debug-btn">Reset Tuning</button>

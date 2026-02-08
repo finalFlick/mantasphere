@@ -84,13 +84,18 @@ export function takeDamage(amount, source = 'Unknown', sourceType = 'enemy', sou
         return;
     }
     
+    // Skip damage during Dash Strike (invuln vs enemies/projectiles only)
+    if (playerRef && playerRef.isDashStrikeInvuln && sourceType !== 'hazard') {
+        return;
+    }
+    
     gameState.health -= amount;
 
     // Debug UX lever: show dash hint on first damage if player hasn't dashed yet
     if (TUNING.tutorialHintsEnabled) {
         gameState.tutorial = gameState.tutorial || {};
         if (!gameState.tutorial.dashHintShown && !gameState.tutorial.hasDashed) {
-            showTutorialCallout('dash', 'Hold SHIFT to DASH (reposition + invuln)', 2500);
+            showTutorialCallout('dash', 'Hold SHIFT to DASH (reposition + brief invuln; hazards still hurt)', 2500);
             gameState.tutorial.dashHintShown = true;
         }
     }
@@ -127,7 +132,7 @@ export function takeDamage(amount, source = 'Unknown', sourceType = 'enemy', sou
         amount: Math.round(amount),
         source,
         sourceType,
-        timestamp: Date.now(),
+        timestamp: Date.now(), // WALL_CLOCK_OK: death recap timestamp only
         healthAfter: Math.max(0, gameState.health)
     });
     

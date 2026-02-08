@@ -29,7 +29,7 @@ ARENA_CONFIG = {
 |------|----------|-----------|--------------|
 | `grunt` | chase | 1 | Rhythmic pulse |
 | `shooter` | ranged | 1 | Staccato accents |
-| `shielded` | tank | 1 | Heavy sub-bass |
+| `shielded` | wardenSupport | 2 | Shield aura dings + heavy sub-bass |
 | `fastBouncer` | bouncing | 2 | Syncopated hi-hats |
 | `splitter` | splits on death | 2 | Cascading arpeggios |
 | `shieldBreaker` | rush attack | 3 | Aggressive stabs |
@@ -40,7 +40,7 @@ ARENA_CONFIG = {
 | Arena | Boss Name | AI Type | Musical Identity |
 |-------|-----------|---------|------------------|
 | 1 | RED PUFFER KING | `pillarGuardian` | Stoic, ritualistic |
-| 2 | THE MONOLITH | `slimeQueen` | Organic, pulsating |
+| 2 | THE SHIELDFATHER | `shieldfather` | Organic, pulsating |
 | 3 | THE ASCENDANT | `teleportingTyrant` | Glitchy, unpredictable |
 | 4 | THE OVERGROWTH | `balloonKing` | Swelling, ominous |
 | 5 | THE BURROWER | `tunnelWyrm` | Subterranean, rumbling |
@@ -375,10 +375,11 @@ interface MusicProfile {
 - **Summon**: Each spawned enemy adds a voice to the choir
 - **Cooldown**: Sustained organ note
 
-#### THE MONOLITH (Arena 2)
-- **Jump Prep**: Rising pitch bend
+#### THE SHIELDFATHER (Arena 2)
+- **Pillar Perch**: Ascending whoosh (signals incoming slam)
+- **Slam Charge**: Building sub rumble that rises in intensity
 - **Landing**: Sub-bass impact + hazard zone hiss
-- **Hazard Trail**: Acidic sizzle tuned to F#
+- **Hazards**: Acidic sizzle tuned to the arena key
 
 #### THE ASCENDANT (Arena 3)
 - **Teleport Out**: Audio ducking + buffer stutter
@@ -430,10 +431,10 @@ const ENEMY_SFX_MAP = {
   },
   
   shielded: {
-    movement: { sound: 'heavy_step', pitch: 'root_sub', rhythm: 'half', volume: -9 },
-    attack: { sound: 'shield_bash', pitch: 'root', rhythm: 'downbeat', volume: -3 },
-    death: { sound: 'metal_crash', pitch: 'root', rhythm: 'any', volume: 0 },
-    musicalRole: 'bass_reinforcement'
+    movement: { sound: 'scuttle_tap', pitch: 'root', rhythm: '8th', volume: -12 },
+    attack: { sound: 'shield_grant_ding', pitch: '3rd', rhythm: '16th', volume: -9 },
+    death: { sound: 'shield_cascade_shatter', pitch: 'root', rhythm: 'any', volume: -3 },
+    musicalRole: 'support_shield_aura'
   },
   
   fastBouncer: {
@@ -726,7 +727,11 @@ function onEnemySpawn(enemy) { PulseMusic.onEnemySpawn(enemy); }
 function onEnemyDeath(enemy) { PulseMusic.onEnemyDeath(enemy); }
 function onEnemyAttack(enemy) { PulseMusic.onEnemyAttack(enemy); }
 
-// 7. PLAYER EVENTS
+// 7. GUARDIAN CRAB (WARDEN) EVENTS - In enemies.js (aura mechanic)
+PulseMusic.onShieldGrant();            // When Guardian Crab grants a shield to an ally
+PulseMusic.onShieldCascade(count);     // When Guardian Crab is disabled/defeated, shields shatter (count = shields broken)
+
+// 8. PLAYER EVENTS
 function takeDamage(amount) {
   // ... existing code ...
   PulseMusic.onPlayerDamage(gameState.health / gameState.maxHealth);  // ← ADD

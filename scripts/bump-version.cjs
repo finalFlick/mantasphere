@@ -31,7 +31,7 @@ function updateIndexHtml(version) {
 }
 
 function createGitTag(version) {
-    const tag = `v${version}`;
+    const tag = version;
     try {
         execSync(`git tag -a ${tag} -m "Release ${tag}"`, { cwd: ROOT, stdio: 'pipe' });
         console.log(`  ✓ Git tag ${tag}`);

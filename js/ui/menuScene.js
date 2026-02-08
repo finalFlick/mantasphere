@@ -418,12 +418,14 @@ export const MenuScene = {
         wingLeft.rotation.y = -0.3;
         wingLeft.position.set(-0.8, 0, 0.1);
         playerGroup.add(wingLeft);
+        playerGroup.leftWing = wingLeft; // Named ref for scene graph safety
         
         const wingRight = new THREE.Mesh(wingGeo, bodyMat.clone());
         wingRight.rotation.z = -Math.PI / 2;
         wingRight.rotation.y = 0.3;
         wingRight.position.set(0.8, 0, 0.1);
         playerGroup.add(wingRight);
+        playerGroup.rightWing = wingRight; // Named ref for scene graph safety
         
         // Tail
         const tail = new THREE.Mesh(
@@ -446,6 +448,7 @@ export const MenuScene = {
         );
         glow.scale.set(1.5, 0.5, 1.2);
         playerGroup.add(glow);
+        playerGroup.glowMesh = glow; // Named ref for scene graph safety
         
         // Position lower on screen, facing toward camera (flying toward black hole)
         playerGroup.position.set(0, -0.5, 4);
@@ -735,16 +738,16 @@ export const MenuScene = {
             this.menuPlayer.rotation.x = Math.sin(this.time * 0.8) * 0.08;
             this.menuPlayer.rotation.z = Math.sin(this.time * 0.6) * 0.05;
             
-            // Wing flap animation - children[1] and children[2] are wings
-            if (this.menuPlayer.children.length >= 3) {
+            // Wing flap animation - use named refs
+            if (this.menuPlayer.leftWing && this.menuPlayer.rightWing) {
                 const flapAngle = Math.sin(this.time * 3) * 0.2;
-                this.menuPlayer.children[1].rotation.x = flapAngle;
-                this.menuPlayer.children[2].rotation.x = -flapAngle;
+                this.menuPlayer.leftWing.rotation.x = flapAngle;
+                this.menuPlayer.rightWing.rotation.x = -flapAngle;
             }
             
             // Pulse glow with music
-            if (this.menuPlayer.children[4]) {
-                this.menuPlayer.children[4].material.opacity = 0.12 + this.pulseIntensity * 0.15;
+            if (this.menuPlayer.glowMesh) {
+                this.menuPlayer.glowMesh.material.opacity = 0.12 + this.pulseIntensity * 0.15;
             }
         }
         

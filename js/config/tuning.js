@@ -37,6 +37,8 @@ export const TUNING = {
   // ==================== UX / FAIRNESS LEVERS (debug-only by default) ====================
 
   // Prevent spawns from getting too close to the player (units). 0 = disabled (no change).
+  // Note: getArenaSpawnPosition() now enforces a hard MIN_SPAWN_DIST=8 regardless of this value.
+  // This knob applies an additional distance floor on top of that.
   spawnSafeZoneRadius: 0,
 
   // Show a small spawn indicator when an enemy spawns close to the player.
@@ -67,8 +69,5 @@ export const TUNING = {
 
   // Attack cone preview (currently always shown). Toggle is for experimentation.
   attackConePreviewEnabled: true,
-
-  // XP gem despawn timer in seconds.
-  xpDespawnSeconds: 15
 };
 

@@ -978,7 +978,7 @@ For duplicates or obsolete issues:
 | Issue | Recommendation | Justification | Canonical Issue (if duplicate) |
 |-------|----------------|---------------|--------------------------------|
 | #789 | Close as duplicate | Same feature request as #456 | #456 |
-| #333 | Close as obsolete | Feature already shipped in v0.3.0 | N/A |
+| #333 | Close as obsolete | Feature already shipped in 0.3.0 | N/A |
 | #555 | Close as won't-fix | Conflicts with game pillars (scope creep) | N/A |
 
 **6) Priority Re-assessment**
@@ -1437,7 +1437,7 @@ You are a **QA and Release Captain**. Your job is to make shipping routine: stro
 
 ### REFERENCE DOCS (read before proposing)
 - `CONTRIBUTING.md` (workflow expectations)
-- `CHANGELOG.md`, `VERSION`, `scripts/bump-version.js` (release/versioning flow)
+- `CHANGELOG.md`, `VERSION`, `scripts/bump-version.cjs` (release/versioning flow)
 - `docs/PLAYTEST_FORM_GUIDE.md` (what is tested and how feedback is gathered)
 
 ### CORE PRINCIPLES (non-negotiable)

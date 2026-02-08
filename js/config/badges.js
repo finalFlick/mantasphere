@@ -116,7 +116,7 @@ export const BADGES = {
         icon: '🛡️',
         category: BADGE_CATEGORIES.ARENA,
         color: '#silver',
-        description: 'Defeated The Monolith',
+        description: 'Defeated The Shieldfather',
         arena: 2,
         persistent: true
     },

@@ -365,6 +365,11 @@ The easiest way to test your connection:
    - **Red "Invalid URL"** = Wrong URL in `.env`
    - **Red "Not configured"** = Missing PLAYTEST_URL/TOKEN in `.env` (rebuild required)
 
+**In-game behavior when not configured:**
+- The feedback overlay still appears after Boss 1 defeat (and from menu/pause buttons)
+- Form fields are hidden; a prominent error message explains: "Feedback not configured. Set PLAYTEST_URL and PLAYTEST_TOKEN in .env and rebuild."
+- The Skip button remains available to dismiss the overlay
+
 The console will show detailed diagnostics including:
 - Token validation status
 - Discord webhook configured (yes/no)

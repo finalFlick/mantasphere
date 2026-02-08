@@ -47,6 +47,7 @@ export const PulseMusic = {
     lastLayerChange: 0,
     lastIntensityChange: 0,
     lastShieldHit: 0,
+    lastDashStrikeTelegraph: 0,
     
     // Helper: Check if system is ready (reduces duplication)
     _checkReady() {
@@ -1222,6 +1223,149 @@ export const PulseMusic = {
     onLevelUp() {
         this.playLevelUpStinger();
     },
+    
+    onDashStrikeStart() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        // Quick rising "whoosh" locked to arena key
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+        
+        osc.type = 'sawtooth';
+        
+        const startFreq = this.midiToFreq(profile.rootMidi - 12);
+        const endFreq = this.midiToFreq(profile.rootMidi + (profile.scaleIntervals[4] || 7) + 12);
+        
+        osc.frequency.setValueAtTime(startFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.18);
+        
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(120, now);
+        filter.frequency.exponentialRampToValueAtTime(900, now + 0.18);
+        
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(0.22, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.sfxBus);
+        
+        osc.start(now);
+        osc.stop(now + 0.24);
+        osc.endTime = now + 0.24;
+        this.activeOscillators.push(osc);
+    },
+    
+    onDashStrikeTelegraph(pan = 0, strength = 1) {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        if (this.lastDashStrikeTelegraph && now - this.lastDashStrikeTelegraph < 0.12) return;
+        this.lastDashStrikeTelegraph = now;
+        
+        const profile = this.currentProfile;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+        
+        osc.type = 'triangle';
+        
+        const baseNote = profile.rootMidi + (profile.scaleIntervals[2] || 4) + 12;
+        const baseFreq = this.midiToFreq(baseNote);
+        
+        osc.frequency.setValueAtTime(baseFreq * 0.9, now);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.15, now + 0.08);
+        
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(baseFreq * 2, now);
+        filter.Q.setValueAtTime(6, now);
+        
+        const vol = 0.14 + Math.max(0, Math.min(1, strength)) * 0.08;
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(vol, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        
+        if (this.ctx.createStereoPanner) {
+            const panner = this.ctx.createStereoPanner();
+            panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), now);
+            gain.connect(panner);
+            panner.connect(this.sfxBus);
+        } else {
+            gain.connect(this.sfxBus);
+        }
+        
+        osc.start(now);
+        osc.stop(now + 0.14);
+        osc.endTime = now + 0.14;
+        this.activeOscillators.push(osc);
+    },
+    
+    onDashStrikeImpact(hitCount = 0) {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        const hitMult = Math.max(0, Math.min(1, hitCount / 4));
+        const vol = 0.35 + hitMult * 0.25;
+        
+        // Sub-bass thump
+        const subOsc = this.ctx.createOscillator();
+        const subGain = this.ctx.createGain();
+        
+        subOsc.type = 'sine';
+        subOsc.frequency.setValueAtTime(70, now);
+        subOsc.frequency.exponentialRampToValueAtTime(28, now + 0.12);
+        
+        subGain.gain.setValueAtTime(vol, now);
+        subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        
+        subOsc.connect(subGain);
+        subGain.connect(this.sfxBus);
+        
+        subOsc.start(now);
+        subOsc.stop(now + 0.22);
+        subOsc.endTime = now + 0.22;
+        this.activeOscillators.push(subOsc);
+        
+        // Bright stab on impact
+        const stabNote = profile.rootMidi + (profile.scaleIntervals[5] || 9) + 12;
+        this.playStab(stabNote, now + 0.01, profile);
+        
+        // Tight noise "crack"
+        const bufferSize = Math.floor(this.ctx.sampleRate * 0.05);
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+        }
+        
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        
+        const hp = this.ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.setValueAtTime(800, now);
+        
+        const ng = this.ctx.createGain();
+        ng.gain.setValueAtTime(0.12 + hitMult * 0.08, now);
+        ng.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+        
+        noise.connect(hp);
+        hp.connect(ng);
+        ng.connect(this.sfxBus);
+        
+        noise.start(now);
+        noise.stop(now + 0.08);
+    },
 
     onXpPickup() {
         if (!this._checkReady()) return;
@@ -1361,6 +1505,112 @@ export const PulseMusic = {
         noiseGain.connect(this.sfxBus);
         noiseSource.start(now + 0.05);
         noiseSource.stop(now + 0.35);
+    },
+
+    // Called when Guardian Crab grants a shield to an ally
+    onShieldGrant() {
+        if (!this._checkReady()) return;
+
+        const now = this.ctx.currentTime;
+
+        // Quick ascending "ding" - subtle, indicates shield was applied
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(1200, now + 0.08);
+
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(this.sfxBus);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        osc.endTime = now + 0.15;
+        this.activeOscillators.push(osc);
+    },
+
+    // Called when Guardian Crab dies (or core breaks) and all granted shields shatter simultaneously
+    onShieldCascade(count) {
+        if (!this._checkReady()) return;
+
+        const now = this.ctx.currentTime;
+
+        // Descending "cascade shatter" - multiple staggered glass breaks
+        // More shields broken = more dramatic sound
+        const intensity = Math.min(count / 5, 1);  // Normalize to 0-1
+
+        // Part 1: Deep thud (foundation)
+        const subOsc = this.ctx.createOscillator();
+        const subGain = this.ctx.createGain();
+
+        subOsc.type = 'sine';
+        subOsc.frequency.setValueAtTime(50, now);
+        subOsc.frequency.exponentialRampToValueAtTime(30, now + 0.2);
+
+        subGain.gain.setValueAtTime(0.5 + intensity * 0.3, now);
+        subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+        subOsc.connect(subGain);
+        subGain.connect(this.sfxBus);
+        subOsc.start(now);
+        subOsc.stop(now + 0.3);
+        subOsc.endTime = now + 0.3;
+        this.activeOscillators.push(subOsc);
+
+        // Part 2: Cascading tinkle (high frequency sweeps, staggered)
+        const cascadeCount = Math.min(count, 4);
+        for (let i = 0; i < cascadeCount; i++) {
+            const delay = i * 0.04;  // 40ms stagger per shield
+
+            const tinkleOsc = this.ctx.createOscillator();
+            const tinkleGain = this.ctx.createGain();
+
+            tinkleOsc.type = 'triangle';
+            tinkleOsc.frequency.setValueAtTime(1600 - i * 200, now + delay);
+            tinkleOsc.frequency.exponentialRampToValueAtTime(400, now + delay + 0.15);
+
+            tinkleGain.gain.setValueAtTime(0.12, now + delay);
+            tinkleGain.gain.exponentialRampToValueAtTime(0.01, now + delay + 0.18);
+
+            tinkleOsc.connect(tinkleGain);
+            tinkleGain.connect(this.sfxBus);
+            tinkleOsc.start(now + delay);
+            tinkleOsc.stop(now + delay + 0.2);
+            tinkleOsc.endTime = now + delay + 0.2;
+            this.activeOscillators.push(tinkleOsc);
+        }
+
+        // Part 3: Filtered noise burst (glass shatter, scaled by count)
+        const bufferSize = Math.round(this.ctx.sampleRate * (0.15 + intensity * 0.2));
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+        }
+
+        const noiseSource = this.ctx.createBufferSource();
+        noiseSource.buffer = buffer;
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.setValueAtTime(3000, now);
+        noiseFilter.frequency.linearRampToValueAtTime(1000, now + 0.3);
+        noiseFilter.Q.value = 1.5;
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.25 + intensity * 0.15, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+
+        noiseSource.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.sfxBus);
+        noiseSource.start(now);
+        noiseSource.stop(now + 0.4);
+
+        log('MUSIC', 'shield_cascade', { count, intensity: intensity.toFixed(2) });
     },
     
     onBossExposed() {
@@ -1709,7 +1959,7 @@ export const PulseMusic = {
     },
     
     // ============================================================================
-    // BOSS 2 (THE MONOLITH) SOUNDS - Pillar Perch + Slam
+    // BOSS 2 (THE SHIELDFATHER) SOUNDS - Pillar Perch + Slam
     // ============================================================================
     
     onPillarPerch() {

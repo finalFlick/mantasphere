@@ -128,11 +128,18 @@ Total: 7 wave encounters + 3 boss encounters
 
 **Lore:** Shield-focused combat with tactical cover.
 
-**Teaching Focus:** "Target priority, shield break mechanics, repositioning"
+**Teaching Focus:** "Target prioritization — kill the source, not the symptom"
 
 **Boss Lesson:** Cover is temporary advantage - keep moving
 
-**Featured Enemy:** Shielded (70% spawn ratio)
+**Featured Enemy:** Guardian Crab (Arena 2 signature enemy)
+
+**Core Mechanic — Guardian Crab Aura:**
+- Guardian Crabs project shields (12 HP each) onto nearby allies within 7 units
+- The crab itself has **no personal shield** — always vulnerable
+- Breaking the **anemone core** disables the aura and **shatters all granted shields instantly**
+- Killing the Guardian Crab also shatters any shields it granted (cascade effect)
+- Teaches target prioritization: identify and eliminate the force multiplier first
 
 **Geometry:**
 - Asymmetric pillar layout (prevents "solved loops")
@@ -142,20 +149,22 @@ Total: 7 wave encounters + 3 boss encounters
 - Pillars provide line-of-sight breaking
 
 **Spawn Configuration:**
-- Shielded ratio: 70% of wave spawns
-- Forces shield break practice
+- Guardian Crab + Red Puffer mix
+- Guardian Crab weight: 30 (common, Arena 2 signature)
+- Forces target priority practice
 - Anti-edge bias remains
 
 **Wave Breakdown:**
-1. **Wave 1** (Lesson): Introduce Shielded enemies
-2. **Waves 2-4** (Integration): Mix Shielded + Red Puffers
-3. **Wave 5** (Exam): High Shielded ratio, pre-boss pressure
+1. **Wave 1** (Lesson): Introduce Guardian Crab — tutorial callout on first sighting
+2. **Waves 2-4** (Integration): Mix Guardian Crabs + Red Puffers, escalating pack sizes
+3. **Wave 5** (Exam): High Guardian Crab ratio, multiple overlapping auras, pre-boss pressure
 
-**Boss:** THE MONOLITH
+**Boss:** THE SHIELDFATHER
 - Jump Slam attacks
 - Hazard zone creation
 - Pillar perch mechanic
-- Tests cover vs. trap awareness
+- Summons Guardian Crabs during boss fight (~30% chance per minion spawn)
+- Tests cover vs. trap awareness + target priority under pressure
 
 **Victory Unlocks:** Verticality, enemy jumping behavior
 
@@ -429,6 +438,8 @@ graph TD
 
 **Base Intervals (milliseconds):**
 
+**Note:** These values are design targets. Implementation uses frame-based timers / sim-time so timing remains consistent under slow-mo and pause.
+
 | Wave Type | Interval | Notes |
 |-----------|----------|-------|
 | Lesson | 1500ms | Slow, safe learning |
@@ -442,7 +453,7 @@ graph TD
 - Arena 5 has 50% reduced burst (tunnels)
 
 **Spawn Prevention:**
-- Stress Pause: No spawns when 15+ enemies alive
+- Stress Pause: No spawns when 6+ enemies alive (tunable via `TUNING.stressPauseThreshold`)
 - Micro-breathers: Every 10 spawns, 2-second pause
 - Budget exhausted: Stop spawning
 
@@ -602,7 +613,7 @@ Cost = Durability Cost + Damage Cost
 | Enemy | Durability | Damage | Total | Notes |
 |-------|------------|--------|-------|-------|
 | Red Puffer | 10 | 8 | 18 | Cheap fodder |
-| Shielded | 25 | 10 | 35 | High durability |
+| Guardian Crab | 25 | 10 | 35 | Support force multiplier |
 | Fast Bouncer | 12 | 10 | 22 | Speed threat |
 | Splitter | 18 | 12 | 30 | Splits increase cost |
 | Shooter | 8 | 12 | 20 | Ranged pressure |
@@ -626,6 +637,12 @@ Wave completes when:
 - If no affordable enemy exists, budget exhausted
 - Prevents infinite spawn attempts
 - Warning logged (once per wave)
+
+**Softlock Failsafe:**
+- **Budget exhausted + enemies remain:** Tracks time since last enemy kill when budget is exhausted but enemies remain. If 10 seconds pass (600 frames) with no kills, all remaining enemies are force-cleared.
+- **Stress pause deadlock:** Tracks time under stress pause with no kills. If 10 seconds pass with no kills, temporarily lifts stress pause and clears stuck enemies if count exceeds 1.5x threshold.
+- Prevents wave stalls from stuck/unreachable enemies or stress pause deadlocks
+- Logs `[SAFETY] softlock_failsafe` or `[SAFETY] stress_pause_failsafe` events with arena/wave context
 
 ---
 
@@ -732,7 +749,7 @@ Enemies unlock progressively:
 
 **Timeline:**
 - Arena 1: Red Puffer
-- Arena 2: + Shielded
+- Arena 2: + Guardian Crab
 - Arena 3: + Pillar Police
 - Arena 4: + Fast Bouncer (Pillar Police removed)
 - Arena 5: + Splitter

@@ -84,7 +84,7 @@ git push -u origin feat/my-feature
 The AI will suggest when it's time to release. When approved:
 
 1. Version branch merges to main
-2. Version gets tagged (e.g., `v0.3.0`)
+2. Version gets tagged (e.g., `0.3.0`)
 3. Old branch archived (e.g., `archive/0.3.x`)
 4. New version branch created (e.g., `0.4.x`)
 
@@ -338,7 +338,8 @@ Follow the conventions in `.cursorrules`:
 - Pool frequently spawned objects (projectiles, particles)
 - Cache shared geometries — don't create new geometry per spawn
 - Use delta time for all movement (never assume 60fps)
-- Use `Date.now()` only for display — use frame counters for game logic
+- Use `gameState.time.simSeconds` for gameplay timing; `gameState.time.realSeconds` for UI chrome
+- Use `Date.now()` only with `// WALL_CLOCK_OK: <reason>` exceptions (UI-only, debug, network)
 
 ### Debug Logging
 
@@ -352,6 +353,75 @@ log('TAG', 'event_name', { key: value });
 - **DO NOT use raw console.log** - Always use the framework
 - **Keep console.warn/error for actual errors** - Storage failures, missing features, etc.
 - **Rate-limit warnings that could spam** - Use `logThrottled()` or a "warned" flag
+
+---
+
+## Refactoring Guidelines
+
+### When to Refactor
+
+Refactor when:
+- File exceeds **2,000 LOC** (consider splitting)
+- File handles **multiple responsibilities** (extract focused modules)
+- Code has **brittle patterns** (e.g., `children[index]` access)
+- **Maintainability** is suffering (hard to find functions, high coupling)
+
+### Refactoring Patterns
+
+#### File Splitting
+
+When splitting large files:
+1. **Identify responsibilities** - Group related functions
+2. **Create focused modules** - One responsibility per module
+3. **Maintain backward compatibility** - Re-export from original file initially
+4. **Update imports gradually** - Or all at once if scope is clear
+5. **Verify no regressions** - Test all affected functionality
+
+**Example:** Splitting `boss.js` into `bossMeshFactory.js`, `bossAI.js`, `bossCutscenes.js`, `bossVFXGlue.js`
+
+#### Scene Graph Safety
+
+**Never use `children[index]`** - Child order can change, breaking code.
+
+**BAD:**
+```javascript
+boss.children[1].material.color.setHex(0xff0000);
+```
+
+**GOOD:**
+```javascript
+// At creation time:
+boss.bodyMesh = new THREE.Mesh(...);
+boss.add(boss.bodyMesh);
+
+// Later:
+boss.bodyMesh.material.color.setHex(0xff0000);
+```
+
+#### Module Organization
+
+- **One responsibility per module** - If a file does X AND Y, consider splitting
+- **Keep modules focused** - Aim for <1,500 LOC per module
+- **Use clear naming** - `bossAI.js` is clearer than `bossHelpers.js`
+
+### Refactoring Checklist
+
+Before refactoring:
+- [ ] Create GitHub Issue with scope and acceptance criteria
+- [ ] Identify all affected files and imports
+- [ ] Plan backward compatibility strategy
+- [ ] Test current behavior (baseline)
+
+During refactoring:
+- [ ] Split files by responsibility
+- [ ] Update imports systematically
+- [ ] Maintain functionality (no behavior changes)
+- [ ] Run game and verify no regressions
+
+After refactoring:
+- [ ] Update documentation if structure changed
+- [ ] Close GitHub Issue
+- [ ] Update `.cursorrules` if patterns changed
 
 ---
 
@@ -370,6 +440,8 @@ log('TAG', 'event_name', { key: value });
 **Before committing:**
 1. Search for `TODO`, `FIXME`, `STUB` — implement or remove
 2. Check if your changes require doc updates
+3. Run a timing audit: `Date.now()` should only appear with `// WALL_CLOCK_OK` in UI/debug/network paths
+   - Optional helper: `node scripts/audit-timing.cjs`
 
 ---
 
@@ -380,7 +452,7 @@ When shipping a new version:
 1. **Close all issues** in the milestone
 2. **Create a release branch:** `git checkout -b chore/release-X.Y.Z`
 3. **Update CHANGELOG.md** with changes under the new version
-4. **Bump version** using `node scripts/bump-version.js X.Y.Z`
+4. **Bump version** using `node scripts/bump-version.cjs X.Y.Z`
 5. **Commit** with `chore: bump version to X.Y.Z`
 6. **Push branch and open PR**
 7. **Merge after approval**

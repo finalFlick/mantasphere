@@ -42,6 +42,12 @@ export function levelUp() {
     showUpgradeMenu();
 }
 
+export function showUpgradeMenuSequence() {
+    if (gameState.pendingLevelUps > 0) {
+        levelUp();
+    }
+}
+
 export function showUpgradeMenu() {
     gameState.paused = true;
     document.exitPointerLock();

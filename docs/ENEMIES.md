@@ -216,45 +216,61 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 
 ---
 
-### Shielded
+### Guardian Crab
 
-**Tagline:** The Walking Fortress
+**Tagline:** Anemone-Bearer
 
 **Stats:**
 - Size: 1.00 (Heavy - larger than standard)
-- Health: 30
-- Speed: 0.045
-- Damage: 12
-- Color: Deep Blue (0x4444ff)
-- XP Value: 3
+- Health: 25
+- Speed: 0.035
+- Damage: 10 (contact only)
+- Color: Bright Blue (0x4466ff)
+- XP Value: 12 (high priority kill reward)
 
 **Spawn Info:**
-- Weight: 30 (common, increased for Arena 2)
+- Weight: 30 (common, Arena 2 signature)
 - Arena Intro: 2
-- **Arena 2 Signature Enemy** (70% spawn ratio)
+- **Arena 2 Signature Enemy**
 
-**Behavior:** Chase
-- Pursues player like Red Puffer
-- Shield mechanic:
-  - Shield HP: 20 (separate from main health)
-  - Max Shield HP: 20
-  - Must break shield before damaging health
-  - Shield visual: orbiting particles
+**Behavior:** Warden Support (new behavior type)
+- **Does NOT have a shield bubble** — its anemone core absorbs damage first
+- Projects shields (12 HP each) onto nearby allies within 7-unit radius
+- Maximum 5 shielded allies at a time (performance + readability cap)
+- Seeks the centroid of nearby allies (hangs with the pack, doesn't rush player)
+- Falls back to chase behavior if no allies nearby
+
+**Aura Mechanics:**
+- Aura Radius: 7 units (~14m diameter)
+- Shield HP per ally: 12
+- Max Shielded: 5
+- **Anemone Core HP:** 12
+- Breaking the anemone core disables the aura and **shatters all granted shields instantly**
+- Shield granted uses existing shield bubble visual (blue)
+- On Guardian Crab death: **all granted shields shatter instantly** (cascade effect)
+  - Slow-mo + cascade audio feedback
+  - Individual shield break VFX per protected enemy
 
 **Visual Profile:**
-- Type: Orbit
-- Orbit Count: 3 particles
-- Orbit Radius: 0.5
-- Orbit Speed: 0.05 (faster orbit)
-- Glow Intensity: 0.4
+- Type: Warden Aura (pulsing ground ring)
+- Ring pulses outward from 0 to aura radius, then resets (sawtooth wave)
+- Ring fades as it expands (opacity 0.3 → 0)
+- Ring Color: 0x4466ff
+- Glow Intensity: 0.5
 
-**Movement Signature:** Stomp
+**Movement Signature:** Scuttle
 
-**Death VFX:** Shatter (16 particles, blue)
+**Death VFX:** Cascade (20 particles, blue) + shield shatter on all protected allies
 
-**Description:** Encased in hardened energy, Shielded enemies have a separate shield health pool. Slow but inevitable, they force you to commit resources or reposition.
+**Audio:**
+- `onShieldGrant()` — subtle ascending ding when shield is applied
+- `onShieldCascade(count)` — dramatic cascade shatter when shields shatter (scales with count)
 
-**Teaching Purpose:** Shield break mechanics, sustained damage
+**Tutorial Callout:** "Break the anemone core to disable shields!" (first encounter)
+
+**Description:** A hulking crab that projects shields onto nearby allies. Its anemone core is the true shield source — break it to collapse the aura and shatter all granted shields.
+
+**Teaching Purpose:** Target prioritization — identify and eliminate the force multiplier before cleaning up the pack
 
 ---
 
@@ -511,13 +527,28 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 
 ## Spawn Mechanics
 
+### Spawn Safety
+
+All spawns enforce post-clamp validation to prevent unfair placement:
+
+- **Minimum Distance:** All enemies must spawn at least 8 units from the player (hardcoded `MIN_SPAWN_DIST = 8`)
+- **Obstacle/Hazard Check:** Spawns are validated using `isValidEnemyPosition()` to prevent placement inside obstacles or hazard zones
+- **Retry Logic:** If validation fails, spawns retry with new positions up to 10 times (single spawns) or skip the spawn (school followers)
+- **Applies To:** Single spawns, school leaders, school followers, and bouncer spawns all validate distance and position
+
+- **Minimum distance from player:** 8 units (enemies never spawn on top of the player)
+- **Obstacle/hazard check:** `isValidEnemyPosition()` rejects spawns inside obstacles or hazard zones
+- **Retry logic:** Up to 10 attempts with center-biased fallback if all retries fail
+- **School spawns:** Follower positions also validated and adjusted if inside obstacles
+- **`TUNING.spawnSafeZoneRadius`:** Additional distance floor (applies on top of the hard 8-unit minimum)
+
 ### Weighted Spawn System
 
 Enemies are selected based on spawn weights during wave progression:
 
 **Weight Categories:**
 - **40+** (Very Common): Red Puffers
-- **20-30** (Common): Shielded, Fast Bouncers, Pillar Police
+- **20-30** (Common): Guardian Crab, Fast Bouncers, Pillar Police
 - **4-8** (Rare): Splitters, Teleporters
 - **0** (Special): Boss minions, elite-only
 
@@ -545,7 +576,7 @@ Damage Cost: Based on damage output
 
 **Example Costs:**
 - Red Puffer: ~15-20 points
-- Shielded: ~35-40 points (high durability)
+- Guardian Crab: ~35-40 points (support force multiplier)
 - Fast Bouncer: ~20-25 points
 - Splitter: ~30-35 points (splits increase cost)
 - Teleporter: ~25-30 points
@@ -576,10 +607,10 @@ Damage Cost: Based on damage output
 | Arena | New Enemies | Available Pool |
 |-------|-------------|----------------|
 | 1     | Red Puffer | Red Puffer |
-| 2     | Shielded | Red Puffer, Shielded |
-| 3     | Pillar Police | Red Puffer, Shielded, Pillar Police |
-| 4     | Fast Bouncer | Red Puffer, Shielded, Fast Bouncer (no PP) |
-| 5     | Splitter | Red Puffer, Shielded, Fast Bouncer, Splitter |
+| 2     | Guardian Crab | Red Puffer, Guardian Crab |
+| 3     | Pillar Police | Red Puffer, Guardian Crab, Pillar Police |
+| 4     | Fast Bouncer | Red Puffer, Guardian Crab, Fast Bouncer (no PP) |
+| 5     | Splitter | Red Puffer, Guardian Crab, Fast Bouncer, Splitter |
 | 6     | Teleporter | All enemies |
 
 **Note:** Pillar Police only spawn in Arena 3-4 (requires pillars)
@@ -615,7 +646,7 @@ Certain enemies ONLY spawn via boss summon ability:
 ## Behavioral Patterns
 
 ### Chase Behavior
-**Enemies:** Red Puffer, Shielded, Splitter
+**Enemies:** Red Puffer, Splitter
 
 **Mechanics:**
 - Direct pursuit of player
@@ -766,7 +797,7 @@ Visual profiles create distinct, recognizable enemies without geometric complexi
 - Orbit Radius: 0.5
 - Orbit Speed: 0.05
 
-**Used By:** Shielded
+**Used By:** (Legacy) None in current roster
 
 **Purpose:** Shield visualization, durability indication
 

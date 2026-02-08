@@ -114,34 +114,38 @@ export const ENEMY_TYPES = {
         deathVfx: { color: 0x22ff22, count: 10, type: 'sparkRing' }
     },
     shielded: {
-        name: 'Shielded',
+        name: 'Guardian Crab',
         size: 1.00,          // Heavy (bigger!)
-        health: 30,
-        speed: 0.045,        // Faster (+40%)
-        damage: 12,
-        color: 0x4444ff,     // Deep blue - tanky
-        xpValue: 9,          // Tripled from 3
-        behavior: 'chase',
-        damageReduction: 0,  // Was 0.5, now shield replaces damage reduction
-        shieldHP: 20,        // NEW: Shield health pool
-        maxShieldHP: 20,
-        spawnWeight: 30,     // Increased from 15 (Arena 2 signature enemy)
+        health: 25,          // Reduced from 30 (support, not main threat)
+        speed: 0.035,        // Reduced from 0.045 (hangs with pack, doesn't rush)
+        damage: 10,          // Reduced from 12 (contact damage is secondary)
+        color: 0x4466ff,     // Slightly brighter blue
+        xpValue: 12,         // Increased from 9 (priority kill reward)
+        behavior: 'wardenSupport',  // NEW behavior type
+        damageReduction: 0,
+        useGuardianCrabMesh: true,  // Uses crab mesh instead of default sphere
+        // Aura configuration (projects shields onto nearby allies)
+        auraRadius: 7,       // ~14m diameter coverage
+        auraShieldHP: 12,    // ~1 extra shot at base damage
+        maxShielded: 5,      // Performance + readability cap
+        anemoneCoreHP: 12,   // Breakable core disables aura and shatters granted shields
+        // NO self-shield (Warden is always vulnerable)
+        spawnWeight: 30,     // Arena 2 signature enemy
         arenaIntro: 2,       // Introduced in Arena 2
         // Roster display fields
-        tagline: 'The Walking Fortress',
-        description: 'Encased in hardened energy, Shielded enemies absorb half of all incoming damage. Slow but inevitable, they force you to commit resources or reposition.',
-        behaviorText: 'Chases with 50% damage reduction',
-        // Visual profile: orbiting particles (shield aura)
+        tagline: 'Anemone-Bearer',
+        description: 'A hulking crab that projects shields onto nearby allies. Its anemone core is the true shield source — break it to collapse the aura and shatter all granted shields.',
+        behaviorText: 'Projects 12 HP shields within 7 units; break the anemone core to disable the aura',
+        // Visual profile: NEW pulsing ring instead of orbit
         visualProfile: {
-            type: 'orbit',
-            orbitCount: 3,
-            orbitRadius: 0.5,
-            orbitSpeed: 0.05,   // Faster orbit (was 0.03)
-            glowIntensity: 0.4
+            type: 'wardenAura',
+            ringPulseSpeed: 0.03,
+            ringColor: 0x4466ff,
+            glowIntensity: 0.5
         },
-        movementSignature: 'stomp',
+        movementSignature: 'scuttle',
         telegraph: null,
-        deathVfx: { color: 0x4444ff, count: 16, type: 'shatter' }
+        deathVfx: { color: 0x4466ff, count: 20, type: 'cascade' }
     },
     fastBouncer: {
         name: 'Fast Bouncer',
@@ -317,9 +321,11 @@ export const ENEMY_TYPES = {
 
 // Arena progression reference:
 // Arena 1: Red Puffer only (learn basics)
-// Arena 2: + fastBouncer, splitter, shielded (learn dodging, priorities)
-// Arena 3: + shooter, shieldBreaker (learn ranged threats, charges)
-// Arena 4: + waterBalloon, teleporter (learn space control, prediction)
+// Arena 2: + Guardian Crab (learn target priority - break the anemone core to disable shields)
+// Arena 3: + Pillar Police (learn verticality)
+// Arena 4: + Fast Bouncer (learn evasion)
+// Arena 5: + Splitter (learn space control)
+// Arena 6: + Teleporter (learn prediction)
 
 // Color discipline reference
 // Warm (red/orange/yellow): Touch/collision/burst threats

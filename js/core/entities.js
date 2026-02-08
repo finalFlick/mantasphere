@@ -13,6 +13,7 @@ export const obstacles = [];
 export const hazardZones = [];
 export const arenaWalls = [];
 export const modulePickups = [];  // Hidden module pickups (Speed Module, etc.)
+export const chests = [];         // Projectile-item chests (dropped on wave clear)
 
 // Boss is wrapped in an object so it can be reassigned
 const bossHolder = { current: null };
@@ -150,6 +151,40 @@ export function resetAllEntities(scene) {
             });
             boss.temporaryWalls = null;
         }
+
+        // Cleanup boss VFX arrays that spawn scene-level meshes (not parented to boss)
+        if (boss.chargeTrails) {
+            boss.chargeTrails.forEach(trail => cleanupVFX(trail));
+            boss.chargeTrails = null;
+        }
+        if (boss.vineZones) {
+            boss.vineZones.forEach(zone => cleanupVFX(zone));
+            boss.vineZones = null;
+        }
+        if (boss.tetherSnapVFXList) {
+            boss.tetherSnapVFXList.forEach(vfx => cleanupVFX(vfx));
+            boss.tetherSnapVFXList = null;
+        }
+        if (boss.minionTethers) {
+            boss.minionTethers.forEach(tether => cleanupVFX(tether));
+            boss.minionTethers = null;
+        }
+        if (boss.detonationWarnings) {
+            boss.detonationWarnings.forEach(w => cleanupVFX(w));
+            boss.detonationWarnings = null;
+        }
+        if (boss.blinkBarrageMarkers) {
+            boss.blinkBarrageMarkers.forEach(m => cleanupVFX(m));
+            boss.blinkBarrageMarkers = null;
+        }
+        if (boss.teleportDecoys) {
+            boss.teleportDecoys.forEach(d => cleanupVFX(d));
+            boss.teleportDecoys = null;
+        }
+        if (boss.fakeEmergeMarkers) {
+            boss.fakeEmergeMarkers.forEach(m => cleanupVFX(m));
+            boss.fakeEmergeMarkers = null;
+        }
         
         bossHolder.current.traverse(c => {
             if (c.geometry) c.geometry.dispose();
@@ -195,6 +230,15 @@ export function resetAllEntities(scene) {
         scene.remove(pickup);
     });
     
+    // Chests - dispose geometries and materials
+    chests.forEach(chest => {
+        chest.traverse(c => {
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        });
+        scene.remove(chest);
+    });
+    
     enemies.length = 0;
     projectiles.length = 0;
     enemyProjectiles.length = 0;
@@ -205,4 +249,5 @@ export function resetAllEntities(scene) {
     hazardZones.length = 0;
     arenaWalls.length = 0;
     modulePickups.length = 0;
+    chests.length = 0;
 }

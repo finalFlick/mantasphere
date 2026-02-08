@@ -2,6 +2,7 @@
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 // Parse .env file
 function loadEnv() {
@@ -17,6 +18,17 @@ function loadEnv() {
         if (match) env[match[1].trim()] = match[2].trim();
     }
     return env;
+}
+
+function getCommitHash() {
+    try {
+        return execSync('git rev-parse --short HEAD', {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+    } catch {
+        return 'unknown';
+    }
 }
 
 const env = loadEnv();
@@ -41,6 +53,7 @@ const config = {
         'ENV_DEBUG_SECRET': isProd ? 'false' : 'true',
         'ENV_PLAYTEST_URL': JSON.stringify(env.PLAYTEST_URL || ''),
         'ENV_PLAYTEST_TOKEN': JSON.stringify(env.PLAYTEST_TOKEN || ''),
+        'ENV_COMMIT_HASH': JSON.stringify(getCommitHash()),
     }
 };
 

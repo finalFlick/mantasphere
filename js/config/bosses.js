@@ -76,7 +76,7 @@ export const BOSS_CONFIG = {
         }
     },
     2: { 
-        name: 'THE MONOLITH', 
+        name: 'THE SHIELDFATHER', 
         health: 2750,  // 5x for longer boss fights 
         damage: 24, 
         size: 2.8, 
@@ -94,9 +94,9 @@ export const BOSS_CONFIG = {
             cooldown: 360           // 6 seconds between perches
         },
         // Roster display fields
-        tagline: 'Master of Terrain',
-        description: 'Cover isn\'t safety - it\'s geometry. The Monolith teaches that obstacles are not just shields but potential traps. Its devastating jump slams create hazard zones that punish static positioning.',
-        behaviorText: 'Jump slams create hazard zones; inherits charge and summon abilities',
+        tagline: 'Anemone Crowned Titan',
+        description: 'The Shieldfather is a massive crab that turns cover into a trap. Its anemone crown empowers minions with shields while brutal slams create hazard zones that punish static positioning.',
+        behaviorText: 'Jump slams create hazard zones; summons Guardian Crabs to shield allies',
         // Inherits: Charge + Summon | Signature: Jump Slam + Hazards
         // "Cover isn't safety. It's geometry."
         abilities: {

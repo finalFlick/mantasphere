@@ -60,7 +60,7 @@ export async function testFeedbackConnection() {
         return { success: false, message: msg };
     }
     
-    const startTime = Date.now();
+    const startTime = Date.now(); // WALL_CLOCK_OK: network timing for feedback ping
     const testPayload = {
         token: config.token,
         test: true,  // Signal this is a test request
@@ -321,7 +321,7 @@ async function handleSubmit() {
     }
     
     // Calculate survival time
-    const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+    const elapsed = Math.floor((Date.now() - gameStartTime) / 1000); // WALL_CLOCK_OK: feedback summary display only
     const minutes = Math.floor(elapsed / 60);
     const seconds = elapsed % 60;
     const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -447,15 +447,36 @@ export function showFeedbackOverlay(context = 'menu') {
     resetFeedbackForm();
     
     const overlay = document.getElementById('feedback-overlay');
-    if (overlay) {
-        overlay.classList.add('visible');
-    }
+    if (!overlay) return;
     
-    // Re-enable submit button
+    overlay.classList.add('visible');
+    
     const submitBtn = document.getElementById('feedback-submit');
-    if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Submit';
+    const statusEl = document.getElementById('feedback-status');
+    const formFields = overlay.querySelectorAll('.feedback-question, .feedback-open-section, .feedback-name-section');
+    
+    if (isFeedbackEnabled()) {
+        // Normal mode: show form, enable submit
+        for (const el of formFields) el.style.display = '';
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit';
+            submitBtn.style.display = '';
+        }
+        if (statusEl) {
+            statusEl.textContent = '';
+            statusEl.className = 'feedback-status';
+        }
+    } else {
+        // Not configured: hide form fields, show explanatory message
+        for (const el of formFields) el.style.display = 'none';
+        if (submitBtn) {
+            submitBtn.style.display = 'none';
+        }
+        if (statusEl) {
+            statusEl.textContent = 'Feedback not configured. Set PLAYTEST_URL and PLAYTEST_TOKEN in .env and rebuild.';
+            statusEl.className = 'feedback-status error';
+        }
     }
 }
 

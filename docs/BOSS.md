@@ -36,6 +36,9 @@ SPHERESTORM uses a **modular ability inheritance system** where each boss inheri
 - Ability weights shift (signature moves more common)
 - Combo attacks unlock in Phase 2+
 
+**Timing Policy:**
+- Telegraphs and ability timers use sim-time (pause/slow-mo safe)
+
 ### Design Philosophy
 
 Bosses are **puzzle tests**, not HP sponges:
@@ -43,6 +46,19 @@ Bosses are **puzzle tests**, not HP sponges:
 - Phase transitions add complexity
 - Patterns are learnable through repetition
 - Fair telegraphs allow skilled play
+
+### Boss Defeat Cleanup
+
+When a boss is killed (`killBoss()`), a comprehensive VFX sweep runs:
+- Charge trails and charge markers are cleared
+- Combo tether VFX is ended
+- Vine zones (Overgrowth) are disposed
+- Wall impact VFX and wall preview markers are removed
+- A belt-and-suspenders scene sweep removes any stray `isDamageZone` objects
+- All remaining enemies are cleared with particle bursts
+- XP gems are vacuumed (collected automatically before the portal spawns)
+
+This prevents lingering damage zones or visual artifacts after boss defeat.
 
 ---
 
@@ -122,9 +138,9 @@ All bosses spawn from an **entrance portal** that appears before the boss:
 
 ---
 
-### Arena 2: THE MONOLITH
+### Arena 2: THE SHIELDFATHER
 
-**Tagline:** Master of Terrain
+**Tagline:** Anemone Crowned Titan
 
 **Stats:**
 - Health: 2,750
@@ -135,7 +151,10 @@ All bosses spawn from an **entrance portal** that appears before the boss:
 
 **Inherited Abilities:**
 - Charge
-- Summon
+- Summon (spawns Guardian Crabs ~30% of the time in Arena 2)
+
+**Entrance Beat:**
+- Intro preview: Jump Slam + hazard preview circles (no damage / no hazards) before combat begins
 
 **Signature Abilities:**
 - **Jump Slam** - Leaps into air and slams down, creating shockwave
@@ -159,9 +178,9 @@ All bosses spawn from an **entrance portal** that appears before the boss:
 | 3     | 33-0%    | 1.5              | 1.2            | Charge → Jump Slam |
 
 **Arena Enemies:**
-- Shielded (70% spawn ratio - arena signature)
+- Guardian Crab (arena signature - projects shields onto allies; break anemone core to disable)
 - Red Puffers
-- Fast Bouncers
+- Grunts
 
 **Design Lesson:** "Cover isn't safety - it's geometry." - Teaches that obstacles can become traps.
 
@@ -440,7 +459,7 @@ Boss cycles through three predictable phases:
 **Mechanics:**
 - Jump target selected during telegraph
 - Slam radius: 6 units (default)
-- Can land on pillars (Monolith)
+- Can land on pillars (Shieldfather)
 - Creates hazard zones on impact
 
 **Cooldowns:**
@@ -451,7 +470,7 @@ Boss cycles through three predictable phases:
 - Phase 2: 30 frames (0.5s)
 - Phase 3: 22 frames (0.37s)
 
-**Used By:** Monolith, Ascendant, Overgrowth, Burrower, Chaos Incarnate
+**Used By:** Shieldfather, Ascendant, Overgrowth, Burrower, Chaos Incarnate
 
 ---
 
@@ -472,7 +491,7 @@ Boss cycles through three predictable phases:
 - Phase 2: 15 frames
 - Phase 3: 10 frames
 
-**Used By:** Monolith, Ascendant, Overgrowth, Burrower, Chaos Incarnate
+**Used By:** Shieldfather, Ascendant, Overgrowth, Burrower, Chaos Incarnate
 
 ---
 

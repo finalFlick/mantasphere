@@ -461,7 +461,7 @@ export function applyAllBalanceOverrides() {
 export function exportBalanceOverrides() {
     const payload = {
         version: 1,
-        createdAt: Date.now(),
+        createdAt: Date.now(), // WALL_CLOCK_OK: metadata timestamp
         overrides: getBalanceOverrideMap()
     };
     return JSON.stringify(payload, null, 2);

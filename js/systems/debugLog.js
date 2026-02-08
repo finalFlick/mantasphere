@@ -142,7 +142,7 @@ export function logOnce(key, tag, event, data = {}) {
  * @param {number} ms - Minimum milliseconds between logs
  */
 export function logThrottled(key, ms, tag, event, data = {}) {
-    const now = Date.now();
+    const now = Date.now(); // WALL_CLOCK_OK: debug log throttling
     const lastTime = throttleTimestamps.get(key) || 0;
     if (now - lastTime < ms) return;
     throttleTimestamps.set(key, now);

@@ -1,15 +1,16 @@
 import { scene } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
-import { xpGems, hearts, tempVec3, obstacles, modulePickups, getArenaPortal, setArenaPortal, getBossEntrancePortal, setBossEntrancePortal } from '../core/entities.js';
+import { xpGems, hearts, tempVec3, obstacles, modulePickups, chests, getArenaPortal, setArenaPortal, getBossEntrancePortal, setBossEntrancePortal } from '../core/entities.js';
 import { player } from '../entities/player.js';
-import { HEART_TTL, XP_GEM_TTL, WAVE_STATE } from '../config/constants.js';
-import { TUNING } from '../config/tuning.js';
+import { HEART_TTL, WAVE_STATE } from '../config/constants.js';
 import { spawnParticle } from '../effects/particles.js';
 import { levelUp } from '../ui/menus.js';
 import { triggerSlowMo, triggerScreenFlash } from './visualFeedback.js';
 import { incrementModuleCounter, tryLevelUpModule, getModuleLevel, isModuleUnlocked } from './moduleProgress.js';
-import { showModuleUnlockBanner } from '../ui/hud.js';
+import { showModuleUnlockBanner, showUnlockNotification } from '../ui/hud.js';
 import { PulseMusic } from './pulseMusic.js';
+import { ITEM_CONFIG, PROJECTILE_ITEMS, getActiveCombination } from '../config/items.js';
+import { log } from './debugLog.js';
 
 // Get the surface height at a given X/Z position (checks platforms/obstacles)
 function getSurfaceHeight(x, z) {
@@ -23,7 +24,9 @@ function getSurfaceHeight(x, z) {
     return maxHeight;
 }
 
+
 export function spawnXpGem(position, value) {
+    // Classic XP gem (simple octahedron)
     const gem = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.2, 0),
         new THREE.MeshBasicMaterial({
@@ -36,14 +39,11 @@ export function spawnXpGem(position, value) {
     gem.position.copy(position);
     // Hover above the surface at spawn position
     const surfaceHeight = getSurfaceHeight(position.x, position.z);
+
     gem.baseY = surfaceHeight + 0.5;
     gem.position.y = gem.baseY;
     gem.value = value * gameState.stats.xpMultiplier;
     gem.bobOffset = Math.random() * Math.PI * 2;
-    // TTL is frame-based (60fps). Use TUNING to allow rapid iteration in debug mode.
-    const tunedSeconds = Math.max(1, Number(TUNING.xpDespawnSeconds || 0));
-    gem.ttl = Math.round(tunedSeconds * 60) || XP_GEM_TTL;
-    gem.fadeFrames = Math.min(180, gem.ttl); // Fade over last 3 seconds (or entire life if shorter)
     
     scene.add(gem);
     xpGems.push(gem);
@@ -88,7 +88,7 @@ export function spawnHeart(position, healAmount) {
 }
 
 export function updateXpGems(delta) {
-    const time = Date.now() * 0.003;
+    const time = (gameState.time?.realSeconds ?? 0) * 3;
     
     for (let i = xpGems.length - 1; i >= 0; i--) {
         const gem = xpGems[i];
@@ -96,24 +96,6 @@ export function updateXpGems(delta) {
         const baseY = gem.baseY !== undefined ? gem.baseY : 0.5;
         gem.position.y = baseY + Math.sin(time + gem.bobOffset) * 0.2;
         gem.rotation.y += 0.05;
-        
-        // Decrement TTL
-        gem.ttl--;
-        
-        // Fade out near expiry (default: last 3 seconds)
-        const fadeFrames = gem.fadeFrames || 180;
-        if (gem.ttl < fadeFrames) {
-            gem.material.opacity = (gem.ttl / fadeFrames) * 0.9;
-        }
-        
-        // Remove expired gems
-        if (gem.ttl <= 0) {
-            gem.geometry.dispose();
-            gem.material.dispose();
-            scene.remove(gem);
-            xpGems.splice(i, 1);
-            continue;
-        }
         
         const dist = gem.position.distanceTo(player.position);
         
@@ -125,7 +107,7 @@ export function updateXpGems(delta) {
         
         // Collect
         if (dist < 1) {
-            gameState.xp += gem.value;
+            applyXp(gem.value);
             spawnParticle(gem.position, 0x44ff44, 5);
             PulseMusic.onXpPickup();
             
@@ -134,13 +116,7 @@ export function updateXpGems(delta) {
             scene.remove(gem);
             xpGems.splice(i, 1);
             
-            // Check level up
-            while (gameState.xp >= gameState.xpToLevel) {
-                gameState.xp -= gameState.xpToLevel;
-                gameState.pendingLevelUps++;
-                gameState.xpToLevel = Math.floor(gameState.xpToLevel * 1.25);  // Reduced from 1.5x for faster progression
-            }
-            
+            // Trigger level-up flow if any are pending
             if (gameState.pendingLevelUps > 0 && !gameState.paused) {
                 levelUp();
             }
@@ -148,8 +124,46 @@ export function updateXpGems(delta) {
     }
 }
 
+/**
+ * Instantly collect all remaining XP gems (hard vacuum).
+ * Called on boss defeat to prevent missed XP from portal overlap.
+ */
+export function collectAllXpGems() {
+    if (xpGems.length === 0) return;
+    
+    let totalXp = 0;
+    for (const gem of xpGems) {
+        totalXp += gem.value;
+        gem.geometry.dispose();
+        gem.material.dispose();
+        scene.remove(gem);
+    }
+    
+    if (totalXp > 0) {
+        applyXp(totalXp);
+        // Single particle burst at player position for feedback
+        spawnParticle(player.position, 0x44ff44, 12);
+        PulseMusic.onXpPickup();
+    }
+    
+    xpGems.length = 0;
+}
+
+// Shared XP application helper (used by pickups and arena warps)
+export function applyXp(amount) {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+
+    gameState.xp += amount;
+
+    while (gameState.xp >= gameState.xpToLevel) {
+        gameState.xp -= gameState.xpToLevel;
+        gameState.pendingLevelUps++;
+        gameState.xpToLevel = Math.floor(gameState.xpToLevel * 1.25);  // Reduced from 1.5x for faster progression
+    }
+}
+
 export function updateHearts(delta) {
-    const time = Date.now() * 0.004;
+    const time = (gameState.time?.realSeconds ?? 0) * 4;
     
     for (let i = hearts.length - 1; i >= 0; i--) {
         const heart = hearts[i];
@@ -305,7 +319,7 @@ export function spawnArenaPortal(position) {
     portal.ring = ring;
     portal.glow = glow;
     portal.beam = beam;
-    portal.spawnTime = Date.now();
+    portal.spawnTime = gameState.time?.realSeconds ?? 0;
     portal.isPortal = true;
     
     scene.add(portal);
@@ -321,8 +335,8 @@ export function spawnArenaPortal(position) {
 export function updateArenaPortal() {
     const portal = getArenaPortal();
     if (!portal) return false;
-    
-    const time = Date.now() * 0.001;
+
+    const time = gameState.time?.realSeconds ?? 0;
     
     // Rotate the ring
     if (portal.ring) {
@@ -555,7 +569,7 @@ export function spawnBossEntrancePortal(position) {
     portal.scale.setScalar(1.8);      // Scale for visibility (same as main menu)
     
     // Store references
-    portal.spawnTime = Date.now();
+    portal.spawnTime = gameState.time?.realSeconds ?? 0;
     portal.isEntrancePortal = true;
     portal.isFrozen = false;
     portal.freezeTransition = 0;
@@ -600,7 +614,7 @@ export function updateBossEntrancePortal() {
     const portal = getBossEntrancePortal();
     if (!portal) return false;
     
-    const time = Date.now() * 0.001;
+    const time = gameState.time?.realSeconds ?? 0;
     
     // Animate freeze transition
     if (portal.isFrozen && portal.freezeTransition < 1) {
@@ -731,7 +745,7 @@ export function spawnModulePickup(moduleId, x, z) {
     
     // Metadata
     group.moduleId = moduleId;
-    group.spawnTime = Date.now();
+    group.spawnTime = gameState.time?.realSeconds ?? 0;
     group.orb = orb;
     group.core = core;
     group.ring = ring;
@@ -744,7 +758,7 @@ export function spawnModulePickup(moduleId, x, z) {
  * Update all module pickups (animation + collection)
  */
 export function updateModulePickups() {
-    const time = Date.now() * 0.001;
+    const time = gameState.time?.realSeconds ?? 0;
     const COLLECTION_RADIUS = 2.0;
     
     for (let i = modulePickups.length - 1; i >= 0; i--) {
@@ -818,4 +832,209 @@ export function clearModulePickups() {
         scene.remove(pickup);
     }
     modulePickups.length = 0;
+}
+
+// ==================== ITEM CHEST SYSTEM ====================
+// Chests drop on wave clear and grant projectile-modifying items.
+
+// Shared geometry for chests (avoids per-spawn allocation)
+let chestGeometry = null;
+
+function getChestGeometry() {
+    if (!chestGeometry) {
+        chestGeometry = new THREE.BoxGeometry(1.0, 0.7, 0.8);
+    }
+    return chestGeometry;
+}
+
+/**
+ * Maybe spawn a chest near the player after a wave clear.
+ * Respects ITEM_CONFIG.chestDropChance. Lesson waves (wave 1) never drop.
+ */
+export function maybeSpawnChest() {
+    if (gameState.currentWave === 1) return; // No chests on lesson wave
+    if (Math.random() > ITEM_CONFIG.chestDropChance) return;
+
+    // Pick a random position near the player (but not on top)
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 5 + Math.random() * 6;
+    let x = player.position.x + Math.cos(angle) * dist;
+    let z = player.position.z + Math.sin(angle) * dist;
+    x = Math.max(-40, Math.min(40, x));
+    z = Math.max(-40, Math.min(40, z));
+
+    spawnChest(x, z);
+}
+
+/**
+ * Spawn a chest at the given XZ position.
+ */
+function spawnChest(x, z) {
+    const group = new THREE.Group();
+
+    // Chest body
+    const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0xdaa520,
+        emissive: 0xdaa520,
+        emissiveIntensity: 0.3,
+        metalness: 0.4,
+        roughness: 0.5
+    });
+    const body = new THREE.Mesh(getChestGeometry(), bodyMat);
+    group.add(body);
+
+    // Lid accent (thin box on top)
+    const lidGeom = new THREE.BoxGeometry(1.05, 0.15, 0.85);
+    const lidMat = new THREE.MeshStandardMaterial({
+        color: 0xffd700,
+        emissive: 0xffd700,
+        emissiveIntensity: 0.4,
+        metalness: 0.6,
+        roughness: 0.3
+    });
+    const lid = new THREE.Mesh(lidGeom, lidMat);
+    lid.position.y = 0.42;
+    group.add(lid);
+
+    group.position.set(x, 0.5, z);
+    group.bobOffset = Math.random() * Math.PI * 2;
+    group.isChest = true;
+
+    scene.add(group);
+    chests.push(group);
+
+    log('SPAWN', 'chest_spawned', { x: x.toFixed(1), z: z.toFixed(1) });
+}
+
+/**
+ * Update all chests (bob animation + collection check).
+ */
+export function updateChests() {
+    const time = (gameState.time?.realSeconds ?? 0) * 3;
+
+    for (let i = chests.length - 1; i >= 0; i--) {
+        const chest = chests[i];
+
+        // Bob
+        chest.position.y = 0.5 + Math.sin(time + chest.bobOffset) * 0.15;
+        chest.rotation.y += 0.01;
+
+        // Collection check
+        if (player && player.position) {
+            const dist = chest.position.distanceTo(player.position);
+            if (dist < ITEM_CONFIG.chestCollectionRadius) {
+                collectChest(chest, i);
+            }
+        }
+    }
+}
+
+/**
+ * Handle chest collection: grant a random projectile item.
+ */
+function collectChest(chest, index) {
+    // Pick a random item the player doesn't already have
+    const allIds = Object.keys(PROJECTILE_ITEMS);
+    const available = allIds.filter(id => !gameState.heldItems.includes(id));
+
+    if (available.length === 0) {
+        // Player has all items — grant XP instead
+        applyXp(50);
+        showUnlockNotification('Chest: +50 XP (all items owned)');
+    } else {
+        const itemId = available[Math.floor(Math.random() * available.length)];
+        gameState.heldItems.push(itemId);
+
+        const item = PROJECTILE_ITEMS[itemId];
+        showUnlockNotification(`Item: ${item.name} — ${item.description}`);
+        log('SPAWN', 'item_collected', { item: itemId, held: [...gameState.heldItems] });
+
+        // Check for combo unlock
+        const combo = getActiveCombination(gameState.heldItems);
+        if (combo) {
+            showUnlockNotification(`Combo unlocked: ${combo.name}!`);
+        }
+    }
+
+    // VFX
+    spawnParticle(chest.position, 0xffd700, 12);
+    PulseMusic.onLevelUp(); // Reuse level-up chime for now
+
+    // Cleanup chest
+    chest.traverse(child => {
+        if (child.geometry && child.geometry !== chestGeometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+    });
+    scene.remove(chest);
+    chests.splice(index, 1);
+
+    // Update HUD item display
+    updateItemHUD();
+}
+
+/**
+ * Clear all chests (on arena change/restart).
+ */
+export function clearChests() {
+    for (const chest of chests) {
+        chest.traverse(child => {
+            if (child.geometry && child.geometry !== chestGeometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+        scene.remove(chest);
+    }
+    chests.length = 0;
+}
+
+/**
+ * Update the item HUD display to show currently held items.
+ */
+function updateItemHUD() {
+    let container = document.getElementById('item-hud');
+    if (!container) {
+        // Create container on first use
+        container = document.createElement('div');
+        container.id = 'item-hud';
+        container.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:100;pointer-events:none;';
+        document.body.appendChild(container);
+    }
+
+    container.innerHTML = '';
+
+    for (const itemId of gameState.heldItems) {
+        const item = PROJECTILE_ITEMS[itemId];
+        if (!item) continue;
+        const badge = document.createElement('div');
+        badge.style.cssText = `
+            background:rgba(0,0,0,0.7);
+            border:2px solid #${item.color.toString(16).padStart(6, '0')};
+            color:#${item.color.toString(16).padStart(6, '0')};
+            padding:4px 10px;
+            border-radius:6px;
+            font-size:13px;
+            font-family:monospace;
+            text-shadow:0 0 6px #${item.color.toString(16).padStart(6, '0')};
+        `;
+        badge.textContent = item.name;
+        container.appendChild(badge);
+    }
+
+    // Show combo badge if active
+    const combo = getActiveCombination(gameState.heldItems);
+    if (combo) {
+        const comboBadge = document.createElement('div');
+        comboBadge.style.cssText = `
+            background:rgba(0,0,0,0.85);
+            border:2px solid #${combo.color.toString(16).padStart(6, '0')};
+            color:#${combo.color.toString(16).padStart(6, '0')};
+            padding:4px 10px;
+            border-radius:6px;
+            font-size:13px;
+            font-weight:bold;
+            font-family:monospace;
+            text-shadow:0 0 8px #${combo.color.toString(16).padStart(6, '0')};
+        `;
+        comboBadge.textContent = combo.name;
+        container.appendChild(comboBadge);
+    }
 }
