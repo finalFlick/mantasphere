@@ -17,6 +17,11 @@ export const PulseMusic = {
     compressor: null,
     musicFilter: null,
     
+    // User-facing mix controls (0-1). Setters update these and apply to nodes when available.
+    masterVolume: 0.6,
+    musicVolume: 0.5,
+    sfxVolume: 0.5,
+    
     // State
     initialized: false,
     enabled: true,
@@ -54,6 +59,10 @@ export const PulseMusic = {
         return this.enabled && this.initialized && this.currentProfile && this.ctx;
     },
     
+    _clamp01(v) {
+        return Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+    },
+    
     // Musical scales (intervals from root)
     SCALES: {
         dorian: [0, 2, 3, 5, 7, 9, 10],
@@ -89,7 +98,7 @@ export const PulseMusic = {
             
             // Master chain
             this.masterGain = this.ctx.createGain();
-            this.masterGain.gain.value = 0.6;
+            this.masterGain.gain.value = this._clamp01(this.masterVolume);
             
             this.compressor = this.ctx.createDynamicsCompressor();
             this.compressor.threshold.value = -24;
@@ -100,7 +109,7 @@ export const PulseMusic = {
             
             // Music bus with filter - lowered from 0.7 to 0.5 for less harsh sound
             this.musicBus = this.ctx.createGain();
-            this.musicBus.gain.value = 0.5;
+            this.musicBus.gain.value = this._clamp01(this.musicVolume);
             this.musicFilter = this.ctx.createBiquadFilter();
             this.musicFilter.type = 'lowpass';
             this.musicFilter.frequency.value = 8000;
@@ -108,7 +117,7 @@ export const PulseMusic = {
             
             // SFX bus
             this.sfxBus = this.ctx.createGain();
-            this.sfxBus.gain.value = 0.5;
+            this.sfxBus.gain.value = this._clamp01(this.sfxVolume);
             
             // Connect chain
             this.musicBus.connect(this.musicFilter);
@@ -1214,6 +1223,88 @@ export const PulseMusic = {
     
     onEnemyAttack(enemy) {
         this.playEnemySound(enemy, 'attack');
+    },
+    
+    onRunnerSpawn() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        // Distinct spawn sound - ascending chime (gold/treasure theme)
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'sine';
+        const baseNote = profile.rootMidi + (profile.scaleIntervals[4] || 7); // Fifth interval
+        osc.frequency.setValueAtTime(this.midiToFreq(baseNote), now);
+        osc.frequency.exponentialRampToValueAtTime(this.midiToFreq(baseNote + 7), now + 0.3);
+        
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.15, now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        
+        osc.connect(gain);
+        gain.connect(this.sfxBus);
+        osc.start(now);
+        osc.stop(now + 0.3);
+        osc.endTime = now + 0.3;
+        this.activeOscillators.push(osc);
+    },
+    
+    onRunnerKilled() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        // Victory chime - reward collected
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'triangle';
+        const baseNote = profile.rootMidi + (profile.scaleIntervals[2] || 4); // Third interval
+        osc.frequency.setValueAtTime(this.midiToFreq(baseNote), now);
+        osc.frequency.exponentialRampToValueAtTime(this.midiToFreq(baseNote + 7), now + 0.2);
+        osc.frequency.exponentialRampToValueAtTime(this.midiToFreq(baseNote + 12), now + 0.4);
+        
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+        
+        osc.connect(gain);
+        gain.connect(this.sfxBus);
+        osc.start(now);
+        osc.stop(now + 0.4);
+        osc.endTime = now + 0.4;
+        this.activeOscillators.push(osc);
+    },
+    
+    onRunnerEscape() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        // Subtle escape sound - descending note (missed opportunity)
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'sine';
+        const baseNote = profile.rootMidi + (profile.scaleIntervals[2] || 4);
+        osc.frequency.setValueAtTime(this.midiToFreq(baseNote), now);
+        osc.frequency.exponentialRampToValueAtTime(this.midiToFreq(baseNote - 5), now + 0.2);
+        
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        
+        osc.connect(gain);
+        gain.connect(this.sfxBus);
+        osc.start(now);
+        osc.stop(now + 0.2);
+        osc.endTime = now + 0.2;
+        this.activeOscillators.push(osc);
     },
     
     onPlayerDamage(healthPercent) {
@@ -2350,8 +2441,26 @@ export const PulseMusic = {
     // ============================================================================
     
     setMasterVolume(vol) {
-        if (this.masterGain) {
-            this.masterGain.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), this.ctx.currentTime);
+        const v = this._clamp01(vol);
+        this.masterVolume = v;
+        if (this.masterGain && this.ctx) {
+            this.masterGain.gain.setValueAtTime(v, this.ctx.currentTime);
+        }
+    },
+    
+    setMusicVolume(vol) {
+        const v = this._clamp01(vol);
+        this.musicVolume = v;
+        if (this.musicBus && this.ctx) {
+            this.musicBus.gain.setValueAtTime(v, this.ctx.currentTime);
+        }
+    },
+    
+    setSfxVolume(vol) {
+        const v = this._clamp01(vol);
+        this.sfxVolume = v;
+        if (this.sfxBus && this.ctx) {
+            this.sfxBus.gain.setValueAtTime(v, this.ctx.currentTime);
         }
     },
     

@@ -219,10 +219,25 @@
         #close-arena-select:hover { border-color: #ffdd44; color: #ffdd44; }
         
         /* Debug Menu */
-        #debug-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 40px 20px; overflow-y: auto; }
-        #debug-screen h2 { font-size: 36px; color: #ff4444; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 3px; }
-        #debug-screen .subtitle { font-size: 14px; color: #888; margin-bottom: 30px; }
-        .debug-section { width: 100%; max-width: 800px; background: rgba(255,255,255,0.03); border: 2px solid #444; border-radius: 15px; padding: 20px; margin-bottom: 20px; }
+        #debug-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 0; overflow: hidden; }
+        #debug-screen h2 { font-size: 36px; color: #ff4444; margin: 20px 0 10px 0; text-transform: uppercase; letter-spacing: 3px; }
+        #debug-screen .subtitle { font-size: 14px; color: #888; margin-bottom: 20px; }
+        
+        /* Quick Bar (sticky) */
+        .debug-quick-bar { position: sticky; top: 0; width: 100%; background: rgba(0, 0, 0, 0.98); border-bottom: 2px solid #444; padding: 10px 20px; display: flex; gap: 10px; flex-wrap: wrap; z-index: 10; }
+        
+        /* Tabs */
+        .debug-tabs { display: flex; gap: 5px; padding: 10px 20px; background: rgba(0, 0, 0, 0.5); border-bottom: 2px solid #444; width: 100%; flex-wrap: wrap; }
+        .debug-tab { padding: 8px 16px; font-size: 14px; background: transparent; border: 2px solid #444; border-radius: 6px; cursor: pointer; color: #888; transition: all 0.3s ease; }
+        .debug-tab:hover { border-color: #666; color: #aaa; }
+        .debug-tab.active { border-color: #ffdd44; color: #ffdd44; background: rgba(255, 221, 68, 0.1); }
+        
+        /* Tab Content */
+        .debug-tab-content { width: 100%; max-width: 1200px; padding: 20px; overflow-y: auto; flex: 1; }
+        .debug-tab-panel { display: none; }
+        .debug-tab-panel.active { display: block; }
+        
+        .debug-section { width: 100%; background: rgba(255,255,255,0.03); border: 2px solid #444; border-radius: 15px; padding: 20px; margin-bottom: 20px; }
         .debug-section h3 { font-size: 18px; color: #ffdd44; margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; }
         .debug-controls { display: flex; flex-wrap: wrap; gap: 10px; }
         .debug-btn { padding: 10px 20px; font-size: 14px; background: linear-gradient(135deg, #444, #555); border: 2px solid #666; border-radius: 8px; cursor: pointer; color: white; transition: all 0.3s ease; }
@@ -235,12 +250,66 @@
         .debug-select:focus { border-color: #ffdd44; outline: none; }
         .debug-input { padding: 10px; font-size: 14px; background: #222; border: 2px solid #444; border-radius: 8px; color: white; width: 80px; }
         .debug-input:focus { border-color: #ffdd44; outline: none; }
+        .debug-textarea { padding: 10px; font-size: 12px; background: #222; border: 2px solid #444; border-radius: 8px; color: white; font-family: monospace; }
+        .debug-textarea:focus { border-color: #ffdd44; outline: none; }
         .debug-label { font-size: 14px; color: #aaa; margin-right: 10px; }
         .debug-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .debug-slider { flex: 1; max-width: 380px; }
         .debug-value { font-size: 14px; color: #ffdd44; min-width: 70px; text-align: right; }
-        #close-debug { margin-top: 20px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
+        
+        /* Command Palette */
+        .debug-command-palette { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.9); z-index: 400; display: none; align-items: center; justify-content: center; }
+        .debug-command-palette.active { display: flex; }
+        .debug-command-palette-content { width: 90%; max-width: 600px; background: rgba(20, 20, 20, 0.95); border: 2px solid #ffdd44; border-radius: 10px; padding: 20px; }
+        .debug-command-input { width: 100%; padding: 15px; font-size: 16px; background: #222; border: 2px solid #444; border-radius: 8px; color: white; }
+        .debug-command-input:focus { border-color: #ffdd44; outline: none; }
+        .debug-command-results { margin-top: 10px; max-height: 400px; overflow-y: auto; }
+        .debug-command-result { padding: 10px; cursor: pointer; border-radius: 4px; margin-bottom: 5px; background: rgba(255,255,255,0.05); }
+        .debug-command-result:hover { background: rgba(255,221,68,0.2); }
+        .debug-command-result.selected { background: rgba(255,221,68,0.3); }
+        
+        /* State Inspector */
+        .debug-state-inspector { font-family: monospace; font-size: 12px; background: #111; padding: 15px; border-radius: 8px; max-height: 600px; overflow-y: auto; }
+        .debug-state-item { margin: 5px 0; padding-left: 20px; }
+        .debug-state-key { color: #ffdd44; }
+        .debug-state-value { color: #aaa; margin-left: 10px; }
+        .debug-state-toggle { cursor: pointer; color: #888; margin-right: 5px; }
+        .debug-state-toggle:hover { color: #ffdd44; }
+        
+        /* Log Viewer */
+        .debug-log-viewer { font-family: monospace; font-size: 11px; background: #111; padding: 15px; border-radius: 8px; max-height: 500px; overflow-y: auto; }
+        .debug-log-entry { margin: 3px 0; padding: 5px; border-left: 3px solid #444; }
+        .debug-log-entry.wave { border-left-color: #44ff44; }
+        .debug-log-entry.spawn { border-left-color: #4444ff; }
+        .debug-log-entry.boss { border-left-color: #ff4444; }
+        .debug-log-entry.debug { border-left-color: #ffdd44; }
+        
+        /* Override Indicators */
+        .debug-override { color: #ff8844; }
+        .debug-override::after { content: " (overridden)"; font-size: 10px; color: #ff8844; }
+        
+        #close-debug { margin: 20px; padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; }
         #close-debug:hover { border-color: #ffdd44; color: #ffdd44; }
+        
+        /* Balance Tuner Styles */
+        .balance-tabs { display: flex; gap: 5px; margin-bottom: 15px; flex-wrap: wrap; }
+        .balance-tab { padding: 8px 16px; font-size: 14px; background: transparent; border: 2px solid #444; border-radius: 6px; cursor: pointer; color: #888; transition: all 0.3s ease; }
+        .balance-tab:hover { border-color: #666; color: #aaa; }
+        .balance-tab.active { border-color: #ffdd44; color: #ffdd44; background: rgba(255, 221, 68, 0.1); }
+        .balance-category { display: none; }
+        .balance-category.active { display: block; }
+        .balance-param-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px; background: rgba(255,255,255,0.02); border-radius: 4px; }
+        .balance-param-label { font-size: 14px; color: #aaa; min-width: 150px; }
+        .balance-param-slider { flex: 1; max-width: 300px; }
+        .balance-param-value { min-width: 80px; }
+        .balance-param-value input { width: 100%; padding: 5px; font-size: 12px; background: #222; border: 1px solid #444; border-radius: 4px; color: white; }
+        .balance-param-reset { cursor: pointer; color: #888; font-size: 18px; padding: 0 8px; }
+        .balance-param-reset:hover { color: #ffdd44; }
+        .balance-param-reset.has-override { color: #ff8844; }
+        .balance-toolbar { display: flex; gap: 10px; align-items: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #444; }
+        .balance-override-count { color: #ff8844; font-size: 12px; }
+        .balance-import-area { display: none; margin-top: 15px; }
+        .balance-import-area textarea { width: 100%; min-height: 100px; padding: 10px; font-size: 12px; background: #222; border: 2px solid #444; border-radius: 8px; color: white; font-family: monospace; }
         
         /* Character Roster Screen */
         #roster-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 40px 20px; overflow-y: auto; }
@@ -302,8 +371,8 @@
         #close-modules:hover { border-color: #00ffff; color: #00ffff; }
         
         /* Pause menu buttons */
-        #pause-roster-btn, #pause-main-menu-btn, #pause-debug-btn { margin-top: 20px; padding: 10px 25px; font-size: 14px; background: transparent; border: 2px solid #666; border-radius: 8px; cursor: pointer; color: #aaa; transition: all 0.3s ease; margin-left: 10px; }
-        #pause-roster-btn:hover, #pause-main-menu-btn:hover, #pause-debug-btn:hover { border-color: #ffdd44; color: #ffdd44; }
+        #pause-roster-btn, #pause-modules-btn, #pause-main-menu-btn, #pause-debug-btn { margin-top: 20px; padding: 10px 25px; font-size: 14px; background: transparent; border: 2px solid #666; border-radius: 8px; cursor: pointer; color: #aaa; transition: all 0.3s ease; margin-left: 10px; }
+        #pause-roster-btn:hover, #pause-modules-btn:hover, #pause-main-menu-btn:hover, #pause-debug-btn:hover { border-color: #ffdd44; color: #ffdd44; }
         #pause-main-menu-btn { border-color: #ff4444; color: #ff4444; }
         #pause-main-menu-btn:hover { border-color: #ff6666; color: #ff6666; }
         #pause-debug-btn { border-color: #ff8800; color: #ff8800; display: none; }
@@ -488,8 +557,8 @@
             <div class="pause-audio-controls">
                 <div class="audio-slider-row">
                     <label for="master-volume">Master Volume</label>
-                    <input type="range" id="master-volume" min="0" max="100" value="70" step="1">
-                    <span id="master-volume-value">70%</span>
+                    <input type="range" id="master-volume" min="0" max="100" value="60" step="1">
+                    <span id="master-volume-value">60%</span>
                 </div>
                 <div class="audio-slider-row">
                     <label for="music-volume">Music Volume</label>
@@ -498,8 +567,8 @@
                 </div>
                 <div class="audio-slider-row">
                     <label for="sfx-volume">SFX Volume</label>
-                    <input type="range" id="sfx-volume" min="0" max="100" value="70" step="1">
-                    <span id="sfx-volume-value">70%</span>
+                    <input type="range" id="sfx-volume" min="0" max="100" value="50" step="1">
+                    <span id="sfx-volume-value">50%</span>
                 </div>
             </div>
 
@@ -515,6 +584,7 @@
             </div>
 
             <button id="pause-roster-btn">View Roster</button>
+            <button id="pause-modules-btn">Modules</button>
             <button id="pause-feedback-btn">Feedback</button>
             <button id="pause-debug-btn">Debug</button>
             <button id="pause-main-menu-btn">Main Menu</button>
@@ -577,170 +647,284 @@
             <h2>Debug Menu</h2>
             <p class="subtitle">Developer testing tools - not for regular gameplay</p>
             
-            <div class="debug-section">
-                <h3>Empty Arena Mode</h3>
-                <div class="debug-controls">
-                    <button id="debug-empty-arena" class="debug-btn success">Start Empty Arena (No Enemies)</button>
+            <!-- Quick Bar (sticky, always visible) -->
+            <div id="debug-quick-bar" class="debug-quick-bar">
+                <button id="quick-pause" class="debug-btn" title="Pause/Resume (P)">Pause</button>
+                <button id="quick-restart" class="debug-btn" title="Restart Run">Restart</button>
+                <button id="quick-godmode" class="debug-btn" title="Toggle Godmode (G)">Godmode</button>
+                <button id="quick-heal" class="debug-btn success" title="Full Heal">Heal</button>
+                <button id="quick-levels" class="debug-btn" title="Add 10 Levels">+10 Levels</button>
+                <button id="quick-spawn-enemy" class="debug-btn" title="Spawn Enemy (Last Used)">Spawn Enemy</button>
+                <button id="quick-spawn-boss" class="debug-btn danger" title="Spawn Boss (Last Used)">Spawn Boss</button>
+                <button id="quick-hitboxes" class="debug-btn" title="Toggle Hitboxes">Hitboxes</button>
+                <button id="quick-screenshot" class="debug-btn" title="Screenshot">Screenshot</button>
+                <button id="quick-snapshot" class="debug-btn" title="Copy Debug Snapshot">Snapshot</button>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <div id="debug-tabs" class="debug-tabs">
+                <button class="debug-tab active" data-tab="quick">Quick</button>
+                <button class="debug-tab" data-tab="spawn">Spawn</button>
+                <button class="debug-tab" data-tab="tuning">Tuning</button>
+                <button class="debug-tab" data-tab="visual">Visual</button>
+                <button class="debug-tab" data-tab="perf">Perf</button>
+                <button class="debug-tab" data-tab="state">State</button>
+                <button class="debug-tab" data-tab="logs">Logs</button>
+                <button class="debug-tab" data-tab="presets">Presets</button>
+            </div>
+            
+            <!-- Tab Panels -->
+            <div id="debug-tab-content" class="debug-tab-content">
+                <!-- Quick Tab -->
+                <div id="debug-tab-quick" class="debug-tab-panel active">
+                    <div class="debug-section">
+                        <h3>Command Palette</h3>
+                        <div class="debug-controls">
+                            <button id="debug-open-command-palette" class="debug-btn">Open Command Palette (Ctrl+K)</button>
+                        </div>
+                        <p class="subtitle">Type commands like "/spawn grunt", "/set difficulty 2", "/boss phase 2"</p>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Quick Actions</h3>
+                        <div class="debug-controls">
+                            <button id="debug-empty-arena" class="debug-btn success">Start Empty Arena</button>
+                            <button id="debug-give-levels" class="debug-btn">Give 10 Levels</button>
+                            <button id="debug-toggle-invincible" class="debug-btn">Toggle Invincibility</button>
+                            <button id="debug-full-heal" class="debug-btn success">Full Heal</button>
+                            <button id="debug-unlock-all" class="debug-btn">Unlock All Mechanics</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Spawn Tab -->
+                <div id="debug-tab-spawn" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Spawn Enemies</h3>
+                        <div class="debug-row">
+                            <span class="debug-label">Enemy Type:</span>
+                            <select id="debug-enemy-select" class="debug-select">
+                                <option value="grunt">Grunt</option>
+                                <option value="shielded">Guardian Crab</option>
+                                <option value="fastBouncer">Fast Bouncer</option>
+                                <option value="splitter">Splitter</option>
+                                <option value="teleporter">Teleporter</option>
+                                <option value="pillarPolice">Pillar Police</option>
+                                <option value="shooter">Shooter</option>
+                            </select>
+                            <button id="debug-spawn-enemy" class="debug-btn">Spawn Enemy</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Start Boss Battle</h3>
+                        <div class="debug-row">
+                            <span class="debug-label">Boss Type:</span>
+                            <select id="debug-boss-select" class="debug-select">
+                                <option value="1">Boss 1 - The Gatekeeper</option>
+                                <option value="2">Boss 2 - The Shieldfather</option>
+                                <option value="3">Boss 3 - The Ascendant</option>
+                                <option value="4">Boss 4 - The Overgrowth</option>
+                                <option value="5">Boss 5 - The Burrower</option>
+                                <option value="6">Boss 6 - Chaos Incarnate</option>
+                            </select>
+                            <button id="debug-spawn-boss" class="debug-btn danger">Start Boss Battle</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tuning Tab -->
+                <div id="debug-tab-tuning" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Tuning Sliders</h3>
+                        <div class="debug-row">
+                            <span class="debug-label">Spawn Rate</span>
+                            <input id="debug-tuning-spawn-rate" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-tuning-spawn-rate-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Enemy Speed</span>
+                            <input id="debug-tuning-enemy-speed" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-tuning-enemy-speed-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Gravity</span>
+                            <input id="debug-tuning-gravity" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-tuning-gravity-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">XP Despawn</span>
+                            <input id="debug-tuning-xp-despawn" class="debug-slider" type="range" min="5" max="40" step="1" value="15">
+                            <span id="debug-tuning-xp-despawn-value" class="debug-value">15s</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Wave Clear</span>
+                            <input id="debug-tuning-breathing-room" class="debug-slider" type="range" min="0" max="10" step="0.25" value="1.50">
+                            <span id="debug-tuning-breathing-room-value" class="debug-value">1.50s</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Stress Pause</span>
+                            <input id="debug-tuning-stress-threshold" class="debug-slider" type="range" min="3" max="12" step="1" value="6">
+                            <span id="debug-tuning-stress-threshold-value" class="debug-value">6</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Landing Stun</span>
+                            <input id="debug-tuning-landing-stun" class="debug-slider" type="range" min="0" max="30" step="1" value="0">
+                            <span id="debug-tuning-landing-stun-value" class="debug-value">0f</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Atk Speed Eff</span>
+                            <input id="debug-tuning-fire-rate-eff" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
+                            <span id="debug-tuning-fire-rate-eff-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Boss HP</span>
+                            <input id="debug-tuning-boss-hp" class="debug-slider" type="range" min="0.25" max="3.00" step="0.05" value="1.00">
+                            <span id="debug-tuning-boss-hp-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Boss Dmg</span>
+                            <input id="debug-tuning-boss-dmg" class="debug-slider" type="range" min="0.25" max="3.00" step="0.05" value="1.00">
+                            <span id="debug-tuning-boss-dmg-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Spawn Safe R</span>
+                            <input id="debug-tuning-spawn-safe-radius" class="debug-slider" type="range" min="0" max="30" step="1" value="0">
+                            <span id="debug-tuning-spawn-safe-radius-value" class="debug-value">0u</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Telegraph</span>
+                            <input id="debug-tuning-telegraph-mult" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
+                            <span id="debug-tuning-telegraph-mult-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-controls" style="margin-top: 10px;">
+                            <button id="debug-tuning-reset" class="debug-btn">Reset Tuning</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Feature Toggles</h3>
+                        <div class="debug-row">
+                            <span class="debug-label">Difficulty</span>
+                            <input id="debug-tuning-difficulty" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
+                            <span id="debug-tuning-difficulty-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Starting Lives</span>
+                            <input id="debug-tuning-lives" class="debug-slider" type="range" min="1" max="9" step="1" value="1">
+                            <span id="debug-tuning-lives-value" class="debug-value">1</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Elite Chance</span>
+                            <input id="debug-tuning-elite-chance" class="debug-slider" type="range" min="0.00" max="0.50" step="0.01" value="0.00">
+                            <span id="debug-tuning-elite-chance-value" class="debug-value">0%</span>
+                        </div>
+                        <div class="debug-controls" style="margin-top: 10px;">
+                            <button id="debug-toggle-boss-rush" class="debug-btn">Boss Rush: OFF</button>
+                            <button id="debug-toggle-attack-cone" class="debug-btn">Attack Cone: ON</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>UX Levers</h3>
+                        <div class="debug-controls">
+                            <button id="debug-toggle-tutorial-hints" class="debug-btn">Tutorial Hints: OFF</button>
+                            <button id="debug-toggle-spawn-warning" class="debug-btn">Spawn Warning: OFF</button>
+                            <button id="debug-toggle-retreat-announce" class="debug-btn">Retreat Banner: OFF</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Balance Tuner</h3>
+                        <div id="debug-balance"></div>
+                    </div>
+                </div>
+                
+                <!-- Visual Tab -->
+                <div id="debug-tab-visual" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Visual Debug</h3>
+                        <div class="debug-controls">
+                            <button id="debug-toggle-telegraphs" class="debug-btn">Telegraphs: ON</button>
+                            <button id="debug-toggle-hitboxes" class="debug-btn">Hitboxes: OFF</button>
+                            <button id="debug-toggle-particles" class="debug-btn">Particles: ON</button>
+                            <button id="debug-toggle-vfx" class="debug-btn">VFX: ON</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Perf Tab -->
+                <div id="debug-tab-perf" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Performance</h3>
+                        <div id="debug-perf-info" class="debug-controls" style="flex-direction: column; gap: 5px;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>GPU Information</h3>
+                        <div id="debug-gpu-info" class="debug-controls" style="flex-direction: column; gap: 5px;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- State Tab -->
+                <div id="debug-tab-state" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Game State Inspector</h3>
+                        <div id="debug-state-inspector" class="debug-state-inspector">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Logs Tab -->
+                <div id="debug-tab-logs" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Log Tags</h3>
+                        <div id="debug-log-tags" class="debug-controls">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Log Viewer</h3>
+                        <div class="debug-controls" style="margin-bottom: 10px;">
+                            <input type="text" id="debug-log-filter" class="debug-input" placeholder="Filter logs..." style="width: 200px;">
+                            <button id="debug-log-clear" class="debug-btn">Clear</button>
+                            <button id="debug-log-export" class="debug-btn">Export</button>
+                        </div>
+                        <div id="debug-log-viewer" class="debug-log-viewer">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Presets Tab -->
+                <div id="debug-tab-presets" class="debug-tab-panel">
+                    <div class="debug-section">
+                        <h3>Presets</h3>
+                        <div class="debug-controls" style="margin-bottom: 10px;">
+                            <input type="text" id="debug-preset-name" class="debug-input" placeholder="Preset name..." style="width: 200px;">
+                            <button id="debug-preset-save" class="debug-btn success">Save</button>
+                        </div>
+                        <div id="debug-preset-list" class="debug-controls" style="flex-direction: column; gap: 5px;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Export/Import</h3>
+                        <div class="debug-controls" style="flex-direction: column; gap: 10px;">
+                            <button id="debug-preset-export" class="debug-btn">Export to Clipboard</button>
+                            <textarea id="debug-preset-import" class="debug-textarea" placeholder="Paste preset JSON here..." style="width: 100%; min-height: 100px; font-family: monospace;"></textarea>
+                            <button id="debug-preset-import-btn" class="debug-btn">Import</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             
-            <div class="debug-section">
-                <h3>Spawn Enemies</h3>
-                <div class="debug-row">
-                    <span class="debug-label">Enemy Type:</span>
-                    <select id="debug-enemy-select" class="debug-select">
-                        <option value="grunt">Grunt</option>
-                        <option value="shielded">Guardian Crab</option>
-                        <option value="fastBouncer">Fast Bouncer</option>
-                        <option value="splitter">Splitter</option>
-                        <option value="teleporter">Teleporter</option>
-                        <option value="pillarPolice">Pillar Police</option>
-                        <option value="shooter">Shooter</option>
-                    </select>
-                    <button id="debug-spawn-enemy" class="debug-btn">Spawn Enemy</button>
-                </div>
-            </div>
-            
-            <div class="debug-section">
-                <h3>Start Boss Battle</h3>
-                <div class="debug-row">
-                    <span class="debug-label">Boss Type:</span>
-                    <select id="debug-boss-select" class="debug-select">
-                        <option value="1">Boss 1 - The Gatekeeper</option>
-                        <option value="2">Boss 2 - The Shieldfather</option>
-                        <option value="3">Boss 3 - The Ascendant</option>
-                        <option value="4">Boss 4 - The Overgrowth</option>
-                        <option value="5">Boss 5 - The Burrower</option>
-                        <option value="6">Boss 6 - Chaos Incarnate</option>
-                    </select>
-                    <button id="debug-spawn-boss" class="debug-btn danger">Start Boss Battle</button>
-                </div>
-            </div>
-            
-            <div class="debug-section">
-                <h3>Player Controls</h3>
-                <div class="debug-controls">
-                    <button id="debug-give-levels" class="debug-btn">Give 10 Levels</button>
-                    <button id="debug-toggle-invincible" class="debug-btn">Toggle Invincibility</button>
-                    <button id="debug-full-heal" class="debug-btn success">Full Heal</button>
-                    <button id="debug-unlock-all" class="debug-btn">Unlock All Mechanics</button>
-                </div>
-            </div>
-
-            <div class="debug-section">
-                <h3>Tuning Sliders</h3>
-                <div class="debug-row">
-                    <span class="debug-label">Spawn Rate</span>
-                    <input id="debug-tuning-spawn-rate" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
-                    <span id="debug-tuning-spawn-rate-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Enemy Speed</span>
-                    <input id="debug-tuning-enemy-speed" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
-                    <span id="debug-tuning-enemy-speed-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Gravity</span>
-                    <input id="debug-tuning-gravity" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
-                    <span id="debug-tuning-gravity-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">XP Despawn</span>
-                    <input id="debug-tuning-xp-despawn" class="debug-slider" type="range" min="5" max="40" step="1" value="15">
-                    <span id="debug-tuning-xp-despawn-value" class="debug-value">15s</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Wave Clear</span>
-                    <input id="debug-tuning-breathing-room" class="debug-slider" type="range" min="0" max="10" step="0.25" value="1.50">
-                    <span id="debug-tuning-breathing-room-value" class="debug-value">1.50s</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Stress Pause</span>
-                    <input id="debug-tuning-stress-threshold" class="debug-slider" type="range" min="3" max="12" step="1" value="6">
-                    <span id="debug-tuning-stress-threshold-value" class="debug-value">6</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Landing Stun</span>
-                    <input id="debug-tuning-landing-stun" class="debug-slider" type="range" min="0" max="30" step="1" value="0">
-                    <span id="debug-tuning-landing-stun-value" class="debug-value">0f</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Atk Speed Eff</span>
-                    <input id="debug-tuning-fire-rate-eff" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
-                    <span id="debug-tuning-fire-rate-eff-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Boss HP</span>
-                    <input id="debug-tuning-boss-hp" class="debug-slider" type="range" min="0.25" max="3.00" step="0.05" value="1.00">
-                    <span id="debug-tuning-boss-hp-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Boss Dmg</span>
-                    <input id="debug-tuning-boss-dmg" class="debug-slider" type="range" min="0.25" max="3.00" step="0.05" value="1.00">
-                    <span id="debug-tuning-boss-dmg-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Spawn Safe R</span>
-                    <input id="debug-tuning-spawn-safe-radius" class="debug-slider" type="range" min="0" max="30" step="1" value="0">
-                    <span id="debug-tuning-spawn-safe-radius-value" class="debug-value">0u</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Telegraph</span>
-                    <input id="debug-tuning-telegraph-mult" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
-                    <span id="debug-tuning-telegraph-mult-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-controls" style="margin-top: 10px;">
-                    <button id="debug-tuning-reset" class="debug-btn">Reset Tuning</button>
-                </div>
-                <p class="subtitle" style="margin: 10px 0 0 0;">Note: some knobs apply to newly spawned objects only (e.g., XP gem TTL).</p>
-            </div>
-
-            <div class="debug-section">
-                <h3>UX Levers</h3>
-                <div class="debug-controls">
-                    <button id="debug-toggle-tutorial-hints" class="debug-btn">Tutorial Hints: OFF</button>
-                    <button id="debug-toggle-spawn-warning" class="debug-btn">Spawn Warning: OFF</button>
-                    <button id="debug-toggle-retreat-announce" class="debug-btn">Retreat Banner: OFF</button>
-                </div>
-                <p class="subtitle" style="margin: 10px 0 0 0;">These switches are debug-only knobs for playtest iteration.</p>
-            </div>
-
-            <div class="debug-section">
-                <h3>Feature Toggles</h3>
-                <div class="debug-row">
-                    <span class="debug-label">Difficulty</span>
-                    <input id="debug-tuning-difficulty" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
-                    <span id="debug-tuning-difficulty-value" class="debug-value">1.00x</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Starting Lives</span>
-                    <input id="debug-tuning-lives" class="debug-slider" type="range" min="1" max="9" step="1" value="1">
-                    <span id="debug-tuning-lives-value" class="debug-value">1</span>
-                </div>
-                <div class="debug-row">
-                    <span class="debug-label">Elite Chance</span>
-                    <input id="debug-tuning-elite-chance" class="debug-slider" type="range" min="0.00" max="0.50" step="0.01" value="0.00">
-                    <span id="debug-tuning-elite-chance-value" class="debug-value">0%</span>
-                </div>
-                <div class="debug-controls" style="margin-top: 10px;">
-                    <button id="debug-toggle-boss-rush" class="debug-btn">Boss Rush: OFF</button>
-                    <button id="debug-toggle-attack-cone" class="debug-btn">Attack Cone: ON</button>
-                </div>
-                <p class="subtitle" style="margin: 10px 0 0 0;">These are intended for quick experiments (defaults preserve normal gameplay).</p>
-            </div>
-            
-            <div class="debug-section">
-                <h3>Playtest Feedback</h3>
-                <div class="debug-controls">
-                    <button id="debug-test-feedback" class="debug-btn">Test Connection</button>
-                    <span id="debug-feedback-status" style="margin-left: 10px; color: #888;"></span>
-                </div>
-            </div>
-            
-            <div class="debug-section">
-                <h3>GPU Information</h3>
-                <div id="debug-gpu-info" class="debug-controls" style="flex-direction: column; gap: 5px;">
-                    <!-- Populated by JS -->
+            <!-- Command Palette (overlay) -->
+            <div id="debug-command-palette" class="debug-command-palette">
+                <div class="debug-command-palette-content">
+                    <input type="text" id="debug-command-input" class="debug-command-input" placeholder="Type a command... (e.g., /spawn grunt, /set difficulty 2)" autocomplete="off">
+                    <div id="debug-command-results" class="debug-command-results">
+                        <!-- Populated by JS -->
+                    </div>
                 </div>
             </div>
             

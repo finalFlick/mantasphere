@@ -3,7 +3,7 @@ import { gameState, resetGameState } from './core/gameState.js';
 import { initScene, createGround, onWindowResize, render, scene, renderer, camera } from './core/scene.js';
 import { initInput, resetInput, checkCutsceneSkip, cleanupInput } from './core/input.js';
 import { resetAllEntities, enemies, getCurrentBoss } from './core/entities.js';
-import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, COMMIT_HASH, COMMIT_TIME_ISO, BUILD_TIME_ISO, enableDebugMode, PLAYTEST_CONFIG, DEFAULT_LIVES } from './config/constants.js';
+import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, COMMIT_HASH, COMMIT_TIME_ISO, BUILD_TIME_ISO, enableDebugMode, PLAYTEST_CONFIG, DEFAULT_LIVES, ARENA_UPGRADE_CAPS, STAT_MAXIMUMS } from './config/constants.js';
 import { setDifficulty, getDifficultyConfig } from './core/gameState.js';
 
 import { createPlayer, updatePlayer, resetPlayer, player } from './entities/player.js';
@@ -20,6 +20,7 @@ import { resetDamageTime, setPlayerRef, clearDamageLog } from './systems/damage.
 import { initBadges, resetActiveBadges, updateStatBadges } from './systems/badges.js';
 import { initLeaderboard } from './systems/leaderboard.js';
 import { PulseMusic } from './systems/pulseMusic.js';
+import { loadAudioSettings, saveAudioSettings } from './systems/audioSettings.js';
 import { initLogger, setGameStateRef, resetLogState, log } from './systems/debugLog.js';
 import { gpuInfo } from './systems/gpuDetect.js';
 import { TUNING } from './config/tuning.js';
@@ -79,6 +80,7 @@ import {
     isFeedbackEnabled,
     testFeedbackConnection
 } from './systems/playtestFeedback.js';
+import { initDebugMenu, updatePerformanceData } from './ui/debugMenu.js';
 
 let lastUIUpdate = 0;
 let lastFrameTime = 0;
@@ -172,6 +174,21 @@ function getCumulativeArenaXp(arenaNumber) {
 function applyBaselineLevelScaling(levelUpsToApply) {
     const levels = Math.max(0, Math.floor(levelUpsToApply || 0));
 
+    // Initialize upgrade tracking for current arena if needed
+    const arena = gameState.currentArena;
+    if (!gameState.upgradeCountsByArena[arena]) {
+        gameState.upgradeCountsByArena[arena] = {
+            damage: 0,
+            attackSpeed: 0,
+            moveSpeed: 0,
+            maxHealth: 0,
+            pickupRange: 0,
+            projectileCount: 0
+        };
+    }
+    const counts = gameState.upgradeCountsByArena[arena];
+    const caps = ARENA_UPGRADE_CAPS[arena] || ARENA_UPGRADE_CAPS[6];
+
     for (let i = 0; i < levels; i++) {
         gameState.level++;
         gameState.score += 50;
@@ -179,23 +196,43 @@ function applyBaselineLevelScaling(levelUpsToApply) {
         const upgradeIndex = i % 4;
         switch (upgradeIndex) {
             case 0:
-                gameState.stats.damage = Math.floor(gameState.stats.damage * 1.25);
+                // Damage: reduced multiplier + cap enforcement
+                if (counts.damage < caps.damage && gameState.stats.damage < STAT_MAXIMUMS.damage) {
+                    gameState.stats.damage = Math.floor(gameState.stats.damage * 1.05);  // Reduced from 1.25
+                    counts.damage++;
+                }
                 break;
             case 1:
-                gameState.stats.attackSpeed *= 1.2;
+                // Attack Speed: reduced multiplier + cap enforcement
+                if (counts.attackSpeed < caps.attackSpeed && gameState.stats.attackSpeed < STAT_MAXIMUMS.attackSpeed) {
+                    gameState.stats.attackSpeed *= 1.04;  // Reduced from 1.2
+                    gameState.stats.attackSpeed = Math.min(gameState.stats.attackSpeed, STAT_MAXIMUMS.attackSpeed);
+                    counts.attackSpeed++;
+                }
                 break;
             case 2:
-                gameState.stats.moveSpeed *= 1.15;
+                // Move Speed: reduced multiplier + cap enforcement (target: 0.22 by Arena 2)
+                if (counts.moveSpeed < caps.moveSpeed && gameState.stats.moveSpeed < STAT_MAXIMUMS.moveSpeed) {
+                    gameState.stats.moveSpeed *= 1.02;  // Reduced from 1.15
+                    gameState.stats.moveSpeed = Math.min(gameState.stats.moveSpeed, STAT_MAXIMUMS.moveSpeed);
+                    counts.moveSpeed++;
+                }
                 break;
             case 3:
-                gameState.stats.maxHealth += 25;
-                gameState.maxHealth = gameState.stats.maxHealth;
-                gameState.health = Math.min(gameState.health + 25, gameState.maxHealth);
+                // Max Health: reduced additive + cap enforcement
+                if (counts.maxHealth < caps.maxHealth) {
+                    gameState.stats.maxHealth += 10;  // Reduced from 25
+                    gameState.maxHealth = gameState.stats.maxHealth;
+                    gameState.health = Math.min(gameState.health + 10, gameState.maxHealth);
+                    counts.maxHealth++;
+                }
                 break;
         }
 
-        if (i % 3 === 0) {
+        // Projectile Count: slower growth (every 6 levels instead of 3) + cap enforcement
+        if (i % 6 === 0 && counts.projectileCount < caps.projectileCount && gameState.stats.projectileCount < STAT_MAXIMUMS.projectileCount) {
             gameState.stats.projectileCount++;
+            counts.projectileCount++;
         }
     }
 
@@ -224,6 +261,14 @@ async function init() {
     setGameStateRef(gameState);
     initLogger();
     log('STATE', 'init', { version: VERSION });
+    
+    // Hide debug screen if DEBUG is disabled
+    if (!DEBUG_ENABLED) {
+        const debugScreen = document.getElementById('debug-screen');
+        if (debugScreen) {
+            debugScreen.style.display = 'none';
+        }
+    }
     
     // Set document title from config
     document.title = GAME_TITLE.toUpperCase();
@@ -266,6 +311,12 @@ async function init() {
     initBadges();
     initLeaderboard();
     initModuleProgress();  // Load module unlock progress from localStorage
+    
+    // Audio settings (persisted)
+    const audioSettings = loadAudioSettings();
+    PulseMusic.setMasterVolume(audioSettings.masterPercent / 100);
+    PulseMusic.setMusicVolume(audioSettings.musicPercent / 100);
+    PulseMusic.setSfxVolume(audioSettings.sfxPercent / 100);
     PulseMusic.init();
     
     // Initialize animated menu background
@@ -459,6 +510,15 @@ async function init() {
     // Initialize character roster UI
     initRosterUI();
     
+    // Pause menu modules button
+    const pauseModulesBtn = document.getElementById('pause-modules-btn');
+    if (pauseModulesBtn) {
+        addTrackedListener(pauseModulesBtn, 'click', (e) => {
+            e.stopPropagation(); // Prevent resume trigger
+            showModulesScreen();
+        });
+    }
+    
     // Update mastery display on start screen
     updateMasteryDisplay();
     
@@ -498,15 +558,32 @@ async function init() {
     function stopResumeClick(e) {
         e.stopPropagation();
     }
+    
+    function clampPercent(value, fallback) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.max(0, Math.min(100, Math.round(n)));
+    }
+    
+    function setSliderUI(slider, valueEl, percent) {
+        if (slider) slider.value = String(percent);
+        if (valueEl) valueEl.textContent = `${percent}%`;
+    }
+    
+    // Initialize slider UI from persisted settings (keeps UI + audio consistent on first open)
+    setSliderUI(masterVolumeSlider, masterVolumeValue, audioSettings.masterPercent);
+    setSliderUI(musicVolumeSlider, musicVolumeValue, audioSettings.musicPercent);
+    setSliderUI(sfxVolumeSlider, sfxVolumeValue, audioSettings.sfxPercent);
 
     if (masterVolumeSlider) {
         addTrackedListener(masterVolumeSlider, 'mousedown', stopResumeClick);
         addTrackedListener(masterVolumeSlider, 'click', stopResumeClick);
         addTrackedListener(masterVolumeSlider, 'input', (e) => {
             stopResumeClick(e);
-            const value = parseInt(e.target.value, 10);
-            const vol = (Number.isFinite(value) ? value : 70) / 100;
-            PulseMusic.setMasterVolume(vol);
+            const value = clampPercent(parseInt(e.target.value, 10), audioSettings.masterPercent);
+            audioSettings.masterPercent = value;
+            PulseMusic.setMasterVolume(value / 100);
+            saveAudioSettings(audioSettings);
             if (masterVolumeValue) masterVolumeValue.textContent = `${value}%`;
         });
     }
@@ -516,11 +593,10 @@ async function init() {
         addTrackedListener(musicVolumeSlider, 'click', stopResumeClick);
         addTrackedListener(musicVolumeSlider, 'input', (e) => {
             stopResumeClick(e);
-            const value = parseInt(e.target.value, 10);
-            const vol = (Number.isFinite(value) ? value : 50) / 100;
-            if (PulseMusic.musicBus && PulseMusic.ctx) {
-                PulseMusic.musicBus.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), PulseMusic.ctx.currentTime);
-            }
+            const value = clampPercent(parseInt(e.target.value, 10), audioSettings.musicPercent);
+            audioSettings.musicPercent = value;
+            PulseMusic.setMusicVolume(value / 100);
+            saveAudioSettings(audioSettings);
             if (musicVolumeValue) musicVolumeValue.textContent = `${value}%`;
         });
     }
@@ -530,11 +606,10 @@ async function init() {
         addTrackedListener(sfxVolumeSlider, 'click', stopResumeClick);
         addTrackedListener(sfxVolumeSlider, 'input', (e) => {
             stopResumeClick(e);
-            const value = parseInt(e.target.value, 10);
-            const vol = (Number.isFinite(value) ? value : 70) / 100;
-            if (PulseMusic.sfxBus && PulseMusic.ctx) {
-                PulseMusic.sfxBus.gain.setValueAtTime(Math.max(0, Math.min(1, vol)), PulseMusic.ctx.currentTime);
-            }
+            const value = clampPercent(parseInt(e.target.value, 10), audioSettings.sfxPercent);
+            audioSettings.sfxPercent = value;
+            PulseMusic.setSfxVolume(value / 100);
+            saveAudioSettings(audioSettings);
             if (sfxVolumeValue) sfxVolumeValue.textContent = `${value}%`;
         });
     }
@@ -823,6 +898,11 @@ function animate(currentTime) {
     const delta = lastFrameTime === 0 ? 1.0 : rawDeltaMs / 16.67;
     lastFrameTime = currentTime || 0;
     
+    // Update performance data for debug menu
+    if (DEBUG_ENABLED) {
+        updatePerformanceData(rawDeltaMs / 1000);
+    }
+    
     // Clamp delta to prevent huge jumps (e.g., when tab is inactive)
     let clampedDelta = Math.min(delta, 3.0);
     
@@ -1039,7 +1119,47 @@ function setupDebugUI() {
         });
     }
     
-    // Set up debug controls
+    // Wire debug command bus (replaces window.* globals)
+    document.addEventListener('debug:command', (e) => {
+        const { type, payload } = e.detail;
+        switch (type) {
+            case 'spawnEnemy':
+                debugSpawnEnemy(payload.enemyType);
+                break;
+            case 'spawnBoss':
+                debugSpawnBoss(payload.bossNum);
+                break;
+            case 'giveLevels':
+                debugGiveLevels(payload.count);
+                break;
+            case 'toggleInvincibility':
+                debugToggleInvincibility();
+                break;
+            case 'fullHeal':
+                debugFullHeal();
+                break;
+            case 'restartGame':
+                restartGame();
+                break;
+            case 'hideDebugMenu':
+                hideDebugMenu();
+                break;
+            case 'toggleHitboxes':
+                gameState.debug.showHitboxes = payload.visible;
+                log('DEBUG', 'hitboxes_toggled', { visible: payload.visible });
+                break;
+            case 'screenshot':
+                takeScreenshot();
+                break;
+            default:
+                log('DEBUG', 'unknown_command', { type });
+        }
+    });
+    
+    // Initialize new debug menu system
+    initDebugMenu();
+    
+    // Set up existing debug controls (sliders, toggles, etc.)
     setupDebugControls();
 }
 
@@ -1575,6 +1695,23 @@ function debugUnlockAllMechanics() {
     gameState.unlockedEnemyBehaviors.multiLevel = true;
     
     log('DEBUG', 'all_unlocked', {});
+}
+
+// Screenshot functionality (DEBUG-only)
+function takeScreenshot() {
+    if (!DEBUG_ENABLED) return;
+    
+    try {
+        const dataURL = renderer.domElement.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `mantasphere-screenshot-${Date.now()}.png`;
+        link.href = dataURL;
+        link.click();
+        log('DEBUG', 'screenshot_taken', {});
+    } catch (error) {
+        console.warn('[Debug] Screenshot failed:', error);
+        log('DEBUG', 'screenshot_failed', { error: error.message });
+    }
 }
 
 window.onload = init;
