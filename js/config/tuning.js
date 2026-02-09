@@ -67,6 +67,9 @@ export const TUNING = {
   // Boss rush toggle: jump to boss after the first wave clear (debug-only).
   bossRushEnabled: false,
 
+  // Force treasure runner spawn (debug-only). When enabled, runner spawns immediately if conditions met.
+  forceTreasureRunner: false,
+
   // Attack cone preview (currently always shown). Toggle is for experimentation.
   attackConePreviewEnabled: true,
 };
