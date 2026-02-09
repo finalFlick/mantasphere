@@ -714,14 +714,22 @@ export function createShieldBubble(parent, size, color = VISUAL_COLORS.SHIELD_BL
     return shieldMesh;
 }
 
-export function updateShieldVisual(shieldMesh, shieldPercent) {
+export function updateShieldVisual(shieldMesh, shieldPercent, recentlyGranted = false) {
     if (!shieldMesh) return;
+    
+    // Recently granted shields stay fully visible for minimum duration (readability fix)
+    if (recentlyGranted) {
+        shieldMesh.scale.setScalar(1.0);
+        shieldMesh.material.opacity = 0.6;  // Full opacity
+        shieldMesh.visible = true;
+        return;
+    }
     
     // Scale down as shield depletes
     shieldMesh.scale.setScalar(0.7 + shieldPercent * 0.3);
     
-    // Reduce opacity as shield depletes
-    shieldMesh.material.opacity = 0.3 + shieldPercent * 0.3;
+    // Reduce opacity as shield depletes (minimum 0.4 for visibility)
+    shieldMesh.material.opacity = Math.max(0.4, 0.3 + shieldPercent * 0.3);
     
     // Flicker when low (< 30%)
     if (shieldPercent < 0.3) {
