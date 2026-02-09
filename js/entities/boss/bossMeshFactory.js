@@ -1,6 +1,14 @@
 // Boss mesh creation functions
 // Handles creation of boss meshes for all arenas
 
+function darkenRgb(hex, factor = 0.75) {
+    const f = Math.max(0, Math.min(1, Number(factor)));
+    const r = Math.max(0, Math.min(255, Math.round(((hex >> 16) & 0xFF) * f)));
+    const g = Math.max(0, Math.min(255, Math.round(((hex >> 8) & 0xFF) * f)));
+    const b = Math.max(0, Math.min(255, Math.round((hex & 0xFF) * f)));
+    return (r << 16) | (g << 8) | b;
+}
+
 /**
  * Creates a porcupinefish-style mesh with body, spines, and eyes
  * Supports inflation state: 0 = deflated (streamlined swimmer), 1 = inflated (armored orb)
@@ -11,7 +19,7 @@ export function createPorcupinefishMesh(size, color) {
     // Main body - sphere that will be scaled for inflation states
     const bodyGeom = new THREE.SphereGeometry(size, 24, 24);
     const bodyMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.5
     });
@@ -71,7 +79,7 @@ export function createPorcupinefishMesh(size, color) {
     // Tail fin - small cone at the back
     const tailGeom = new THREE.ConeGeometry(size * 0.3, size * 0.6, 4);
     const tailMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.3
     });
@@ -84,7 +92,7 @@ export function createPorcupinefishMesh(size, color) {
     // Side fins - small triangular planes
     const finGeom = new THREE.ConeGeometry(size * 0.25, size * 0.5, 3);
     const finMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.3,
         side: THREE.DoubleSide
@@ -111,7 +119,7 @@ export function createPorcupinefishMesh(size, color) {
     
     const spineGeom = new THREE.ConeGeometry(size * 0.08, size * 0.5, 4);
     const spineMat = new THREE.MeshStandardMaterial({
-        color: 0xffaa44,  // Orange-yellow spines
+        color: darkenRgb(0xffaa44, 0.75),  // Darkened diffuse for spines
         emissive: 0xff6600,
         emissiveIntensity: 0.3
     });
@@ -155,7 +163,7 @@ export function createPorcupinefishMesh(size, color) {
     // Dorsal fin (top ridge) - visible in deflated state
     const dorsalGeom = new THREE.ConeGeometry(size * 0.15, size * 0.4, 3);
     const dorsalMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.4
     });
@@ -190,7 +198,7 @@ export function createShieldfatherMesh(size, color) {
     const group = new THREE.Group();
 
     const bodyMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.5
     });
@@ -253,7 +261,7 @@ export function createShieldfatherMesh(size, color) {
     // Mega claws
     const clawGeom = new THREE.SphereGeometry(size * 0.75, 12, 12);
     const clawMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.4
     });

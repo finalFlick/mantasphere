@@ -12,6 +12,8 @@ export const particles = [];
 export const obstacles = [];
 export const hazardZones = [];
 export const arenaWalls = [];
+export const arenaZones = [];      // Trigger volumes for arena zone effects (Arena 1 skatepark, etc.)
+export const arenaEvents = [];    // Temporary events (geyser, current, predator pass) for Arena 1
 export const modulePickups = [];  // Hidden module pickups (Speed Module, etc.)
 export const chests = [];         // Projectile-item chests (dropped on wave clear)
 
@@ -248,6 +250,15 @@ export function resetAllEntities(scene) {
     obstacles.length = 0;
     hazardZones.length = 0;
     arenaWalls.length = 0;
+    arenaZones.length = 0;
+    arenaEvents.forEach(ev => {
+        if (ev.mesh) {
+            scene.remove(ev.mesh);
+            if (ev.mesh.geometry) ev.mesh.geometry.dispose();
+            if (ev.mesh.material) ev.mesh.material.dispose();
+        }
+    });
+    arenaEvents.length = 0;
     modulePickups.length = 0;
     chests.length = 0;
 }

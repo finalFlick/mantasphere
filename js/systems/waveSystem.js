@@ -27,7 +27,9 @@ import {
 } from '../ui/hud.js';
 import { showFeedbackOverlay, isFeedbackEnabled } from './playtestFeedback.js';
 import { scene } from '../core/scene.js';
+import { setEmissiveIntensity } from './materialUtils.js';
 import { spawnParticle } from '../effects/particles.js';
+import { updateKrakensPulse } from './krakensPulse.js';
 import { startCinematic, triggerSlowMo, triggerScreenFlash, endCinematic, shortenCinematic } from './visualFeedback.js';
 import { log, logOnce, logThrottled, assert } from './debugLog.js';
 
@@ -37,6 +39,9 @@ const WAVE_CLEAR_FRAMES = 90;        // 1.5 seconds - brief victory moment
 const BOSS_INTRO_FRAMES = 60;        // 1 second - dramatic entrance without delay
 const BOSS_DEFEATED_FRAMES = 120;    // 2 seconds - satisfying victory beat
 const ARENA_TRANSITION_FRAMES = 60;  // 1 second
+
+// Final wave: allow boss to spawn while enemies remain after this delay (boss adds to chaos)
+const FINAL_WAVE_BOSS_CHAOS_DELAY_FRAMES = 180;  // 3 seconds at 60fps
 
 // Softlock failsafe: if wave stalls (budget exhausted + enemies remain, or stress pause with no kills)
 // for this many frames, force-clear remaining enemies to prevent stuck runs.
@@ -118,6 +123,11 @@ function handleWaveIntro() {
             ...THREAT_BUDGET.waveBudgets[waveType],
             ...arenaOverrides  // Override with arena-specific values if present
         };
+        // Arena 1: per-wave integration budget so wave 2 isn't a spike and difficulty ramps by wave 7
+        if (gameState.currentArena === 1 && waveType === 'integration' && THREAT_BUDGET.arena1IntegrationByWave) {
+            const perWave = THREAT_BUDGET.arena1IntegrationByWave[gameState.currentWave];
+            if (perWave != null) baseBudget.total = perWave;
+        }
         const arenaScale = THREAT_BUDGET.arenaScaling[gameState.currentArena] || 1.0;
         
         // Select wave modifier (if any)
@@ -205,7 +215,20 @@ function initializeWaveChoreography() {
     
     // Check if choreography is enabled and configured for this arena/wave
     const arenaConfig = SPAWN_CHOREOGRAPHY[`arena${arena}`];
-    const choreographyType = arenaConfig?.[wave] || 'random';
+    let choreographyType = arenaConfig?.[wave] || 'random';
+    
+    // Anti-kite: Retreat-triggered pincer patterns
+    // If player has been retreating > 3 seconds at wave start, 30% chance to force pincer
+    if (gameState.retreatTimer > 180 && Math.random() < 0.3) {
+        choreographyType = 'pincer';
+        log('SPAWN', 'retreat_pincer_triggered', {
+            retreatTimer: gameState.retreatTimer,
+            wave: wave,
+            arena: arena
+        });
+        // Reset retreat timer after triggering (one per wave)
+        gameState.retreatTimer = 0;
+    }
     
     gameState.waveChoreography = {
         type: choreographyType,
@@ -345,6 +368,9 @@ function shuffleArray(array) {
 }
 
 function handleWaveActive() {
+    // Update Kraken's Pulse proc system
+    updateKrakensPulse();
+    
     // Skip enemy spawning if debug mode is enabled with noEnemies flag
     if (gameState.debug && gameState.debug.noEnemies) {
         return;
@@ -357,22 +383,9 @@ function handleWaveActive() {
     const isLessonWave = (gameState.currentWave === 1);
     const isExamWave = (gameState.currentWave === maxWaves);
     
-    // Check for stress pause (too many enemies alive)
-    if (enemies.length >= getStressPauseThreshold()) {
-        if (!gameState.stressPauseActive) {
-            gameState.stressPauseActive = true;
-            stressPauseTimer = 0;
-            lastKillCount = gameState.kills;
-            // Optional: signal music to dip
-        }
-        // Don't spawn more until player clears some
-        // Softlock failsafe: if stress pause persists with no kills, force-clear
-        updateSoftlockFailsafe();
-        checkWaveComplete();
-        return;
-    }
-    gameState.stressPauseActive = false;
-    stressPauseTimer = 0;  // Reset when stress pause ends
+    // Stress pause gate removed - spawning is now controlled by budget and micro-breathers only
+    // Softlock failsafe still runs to prevent truly stuck waves
+    updateSoftlockFailsafe();
     
     // Budget-based breathing beats (50% + 75% budget cleared) - applies to all arenas
     // These pause spawning only (enemies still move/attack), but create a readable intensity dip.
@@ -473,35 +486,33 @@ function handleWaveActive() {
     
     // Arena 1 special: progressive spawn pacing
     // Start slow, speed up as wave progresses (building pressure feel)
-    // Hybrid ramping: each wave ramps internally + later waves start faster
+    // Wave 1 very easy; gradual ramp; wave 7 exam spike
     if (gameState.currentArena === 1) {
-        // Wave number determines starting interval (later waves start faster)
         const waveStartIntervals = {
-            1: 2500,  // Wave 1: very relaxed start (2.5s)
-            2: 1700,  // Wave 2: +200ms base
-            3: 1400,  // Wave 3: +200ms base
-            4: 1000,  // Waves 4+: fast start (1.0s)
+            1: 4000,  // Wave 1: very easy (4s start)
+            2: 3200,  // Wave 2: gentle ramp (softer than before)
+            3: 1600,  // Wave 3: moderate
+            4: 1100,  // Wave 4
+            5: 900,   // Wave 5
+            6: 900,   // Wave 6
+            7: 700    // Wave 7 exam: intense
         };
-        
-        // Floor intervals (fastest each wave type can get)
         const waveFloorIntervals = {
-            1: 1200,  // Wave 1 floor: 1.2s (never frantic)
-            2: 700,   // Wave 2 floor: 0.7s
-            3: 500,   // Wave 3 floor: 0.5s
-            4: 400,   // Waves 4+ floor: 0.4s
+            1: 2000,  // Wave 1 floor: 2s (never frantic)
+            2: 1600,  // Wave 2 floor (softer)
+            3: 700,   // Wave 3 floor
+            4: 500,   // Wave 4 floor
+            5: 400,   // Wave 5 floor
+            6: 400,   // Wave 6 floor
+            7: 350    // Wave 7 exam floor
         };
-        
-        const wave = Math.min(gameState.currentWave, 4);
-        const startInterval = waveStartIntervals[wave];
-        const floorInterval = waveFloorIntervals[wave];
-        
-        // Calculate ramp progress (0 = start of wave, 1 = most spawns done)
-        // Use spawn count relative to expected total spawns
-        const expectedSpawns = Math.ceil(gameState.waveBudgetTotal / 10); // Rough estimate
+        const wave = Math.min(gameState.currentWave, maxWaves);
+        const startInterval = waveStartIntervals[wave] ?? waveStartIntervals[7];
+        const floorInterval = waveFloorIntervals[wave] ?? waveFloorIntervals[7];
+        const expectedSpawns = Math.ceil(gameState.waveBudgetTotal / 10);
         const spawnProgress = Math.min(1, gameState.waveSpawnCount / expectedSpawns);
-        
-        // Lerp from start to floor based on progress
         spawnInterval = startInterval - (startInterval - floorInterval) * spawnProgress;
+        if (isExamWave) burstChance = WAVE_CONFIG.examWave.burstChance;
     }
     
     // Arena 5 special: reduce burst chance (tunnels amplify unfairness)
@@ -713,20 +724,31 @@ function checkWaveComplete() {
     const budgetExhausted = gameState.waveBudgetRemaining <= 0;
     const allEnemiesDead = enemies.length === 0;
     const noBoss = !getCurrentBoss();
-    
-    // Wave completes when all enemies are dead - XP collection not required
-    if (budgetExhausted && allEnemiesDead && noBoss) {
-        // Only transition if we're still in WAVE_ACTIVE state (avoid duplicate transitions)
-        if (gameState.waveState === WAVE_STATE.WAVE_ACTIVE) {
-            gameState.waveState = WAVE_STATE.WAVE_CLEAR;
-            gameState.waveTimer = 0;
-            log('WAVE', 'complete_triggered', {
-                wave: gameState.currentWave,
-                budgetRemaining: gameState.waveBudgetRemaining,
-                enemiesAlive: enemies.length,
-                spawnCount: gameState.waveSpawnCount
-            });
-        }
+    const maxWaves = getMaxWaves();
+    const inChaseMode = gameState.arena1ChaseState?.enabled;
+    const chaseComplete = inChaseMode && gameState.arena1ChaseState?.bossEncounterCount >= 3;
+    const isFinalWave = gameState.currentWave >= maxWaves && (!inChaseMode || chaseComplete);
+
+    // Final wave only: when budget exhausted but enemies remain, count down to allow boss to add to chaos
+    if (budgetExhausted && noBoss && isFinalWave && !allEnemiesDead) {
+        gameState.finalWaveBossChaosTimer = (gameState.finalWaveBossChaosTimer ?? 0) + 1;
+    } else {
+        gameState.finalWaveBossChaosTimer = 0;
+    }
+
+    const chaosTimerElapsed = (gameState.finalWaveBossChaosTimer ?? 0) >= FINAL_WAVE_BOSS_CHAOS_DELAY_FRAMES;
+    const canComplete = budgetExhausted && noBoss && (allEnemiesDead || (isFinalWave && chaosTimerElapsed));
+
+    if (canComplete && gameState.waveState === WAVE_STATE.WAVE_ACTIVE) {
+        gameState.waveState = WAVE_STATE.WAVE_CLEAR;
+        gameState.waveTimer = 0;
+        gameState.finalWaveBossChaosTimer = 0;
+        log('WAVE', 'complete_triggered', {
+            wave: gameState.currentWave,
+            budgetRemaining: gameState.waveBudgetRemaining,
+            enemiesAlive: enemies.length,
+            spawnCount: gameState.waveSpawnCount
+        });
     }
 }
 
@@ -819,6 +841,7 @@ function handleWaveClear() {
         } else {
             gameState.currentWave++;
             gameState.waveState = WAVE_STATE.WAVE_INTRO;
+            gameState.finalWaveBossChaosTimer = 0;
         }
         gameState.waveTimer = 0;
         updateUI();
@@ -1046,6 +1069,9 @@ function handleBossIntro() {
 }
 
 function handleBossActive() {
+    // Update Kraken's Pulse proc system
+    updateKrakensPulse();
+    
     // Update entrance portal animation (frozen state)
     updateBossEntrancePortal();
     
@@ -1137,7 +1163,7 @@ function handleBossRetreat() {
             
             // Slight pulse/glow effect (boss material)
             if (boss.bodyMaterial) {
-                boss.bodyMaterial.emissiveIntensity = 1 + Math.sin(frame * 0.5) * 0.5;
+                setEmissiveIntensity(boss.bodyMaterial, 1 + Math.sin(frame * 0.5) * 0.5);
             }
         }
         // Phase 2 (20-70 frames): Fast spiral up with bubble trail
@@ -1274,6 +1300,7 @@ function completeRetreat(boss) {
     gameState.currentWave++;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
     gameState.waveTimer = 0;
+    gameState.finalWaveBossChaosTimer = 0;
     updateUI();
     
     log('STATE', 'boss_return_to_waves', { nextWave: gameState.currentWave });
@@ -1369,6 +1396,7 @@ function handleArenaTransition() {
         player.velocity.set(0, 0, 0);
         gameState.waveState = WAVE_STATE.WAVE_INTRO;
         gameState.waveTimer = 0;
+        gameState.finalWaveBossChaosTimer = 0;
         
         // Load new arena music profile
         PulseMusic.onArenaChange(gameState.currentArena);

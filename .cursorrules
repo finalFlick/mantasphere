@@ -24,6 +24,8 @@ Built with:
 - **Vanilla JavaScript** with ES Modules
 - **esbuild bundling** - bundles to `dist/bundle.js` for fast dev/prod builds
 
+**Assets / Textures:** Game textures live in `assets/textures/`. Types: **albedo** (base color, `map`), **normal** (`normalMap`), **ORM** (R=AO, G=Roughness, B=Metalness; geometry needs `uv2` for AO), **RGBA** (color + alpha for VFX). Loader: `js/systems/textures.js`; init after `initScene()`, before `createGround()`.
+
 ## Clarifying Questions Protocol
 
 To avoid wrong implementations and wasted work, use **risk-based clarifying questions** when a request has ambiguity, branching choices, unclear success criteria, or high blast-radius.
@@ -177,7 +179,9 @@ behaviorText: 'What it does in gameplay'  // Green behavior hint
    - `features` array
    - `teaches` description
    - `bossLesson` description
-2. Add geometry in `js/arena/generator.js`
+2. Geometry (choose one):
+   - **Layout-driven:** Add layout in `js/config/arenaLayouts.js` (e.g. `ARENA_N_LAYOUT` with `playerSpawn`, `objects`, optional `prefabs` / `enemySpawners`). Register it in `getArenaLayout(arenaNumber)`. Add new spawn types in `js/arena/spawnFactory.js` if needed. Complex visual-only geometry (bowls, castle, etc.) can stay in `js/arena/generator.js` and run when `arenaNum === N` after `buildFromLayout`.
+   - **Code-only:** Add geometry in `js/arena/generator.js` (for arenas without a layout).
 
 #### New Badge
 1. Add to `js/config/badges.js`
@@ -260,6 +264,9 @@ python -m http.server 8000
 |------|---------|
 | `js/main.js` | Entry point, game loop |
 | `js/config/arenas.js` | Arena definitions with lore |
+| `js/config/arenaLayouts.js` | Data-driven arena layouts (objects, prefabs, playerSpawn) |
+| `js/arena/spawnFactory.js` | Spawn factory: spawn(type, x, z, opts) for obstacles, hazards, landmarks, prefabs |
+| `js/arena/placementEditor.js` | Debug-only: placement mode (click to place, export layout JSON) |
 | `js/config/badges.js` | Badge definitions |
 | `js/config/bosses.js` | Boss configurations |
 | `js/config/enemies.js` | Enemy types |
@@ -303,7 +310,7 @@ When working on **feature design** (not just bug fixes), follow this workflow:
 | High-level / cross-system | Game Director | Answer directly |
 | Boss fights / abilities | Boss Designer | Read `docs/BOSS.md` |
 | Enemy types / waves | Enemy Designer | Read `docs/ENEMIES.md` |
-| Arena layout / geometry | Arena Designer | Read `docs/ARENA.md` |
+| Arena layout / geometry | Arena Designer | Read `docs/ARENA.md`; layout-driven arenas use `js/config/arenaLayouts.js` |
 | Music / SFX / audio | Audio Designer | Read `docs/PULSE_MUSIC_SYSTEM.md` |
 | Playtest feedback | Playtest Feedback Evaluator | Review feedback + docs |
 | Code review / pre-commit | Code Review Auditor | Review code changes |
@@ -351,7 +358,7 @@ When working on **feature design** (not just bug fixes), follow this workflow:
 | `js/entities/player.js`, `js/systems/damage.js`, `js/systems/projectiles.js`, `js/config/upgrades.js` | `docs/PLAYER.md` |
 | `js/config/bosses.js`, `js/entities/boss.js` | `docs/BOSS.md` |
 | `js/config/enemies.js`, `js/entities/enemies.js` | `docs/ENEMIES.md` |
-| `js/config/arenas.js`, `js/arena/generator.js`, `js/systems/waveSystem.js` | `docs/ARENA.md` |
+| `js/config/arenas.js`, `js/config/arenaLayouts.js`, `js/arena/spawnFactory.js`, `js/arena/generator.js`, `js/systems/waveSystem.js` | `docs/ARENA.md` |
 | `js/systems/pulseMusic.js` | `docs/PULSE_MUSIC_SYSTEM.md` |
 
 **Examples:**

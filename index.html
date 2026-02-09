@@ -11,7 +11,7 @@
         #game-container { width: 100vw; height: 100vh; position: relative; }
         
         /* HUD */
-        #hud { position: absolute; top: 0; left: 0; right: 0; padding: 20px; pointer-events: none; z-index: 100; }
+        #hud { position: absolute; top: 0; left: 0; right: 0; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); pointer-events: none; z-index: 100; }
         .hud-top { display: flex; justify-content: space-between; align-items: flex-start; }
         .hud-left, .hud-right { background: rgba(0, 0, 0, 0.7); padding: 15px 20px; border-radius: 10px; color: white; }
         .hud-center { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 25px; border-radius: 10px; color: white; text-align: center; }
@@ -27,6 +27,69 @@
         
         /* Badge Panel */
         #badge-panel { display: flex; gap: 5px; margin-top: 10px; flex-wrap: wrap; max-width: 200px; }
+        
+        /* Stats and Blueprints Panel */
+        .hud-stats-panel {
+            position: absolute;
+            bottom: max(20px, env(safe-area-inset-bottom));
+            left: max(20px, env(safe-area-inset-left));
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-size: 13px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        .stats-section {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        
+        .stat-name {
+            color: #888;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            color: #ffdd44;
+            font-weight: bold;
+            font-family: monospace;
+        }
+        
+        .blueprints-section {
+            min-width: 200px;
+        }
+        
+        .blueprint-item {
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            border-left: 3px solid;
+        }
+        
+        .blueprint-name {
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+        .blueprint-icon { margin-right: 6px; font-size: 1em; }
+        
+        .blueprint-values {
+            font-size: 11px;
+            color: #aaa;
+            font-family: monospace;
+        }
         .badge-icon { width: 28px; height: 28px; background: rgba(0,0,0,0.5); border: 2px solid #333; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; opacity: 0.4; transition: all 0.3s ease; }
         .badge-icon.active { opacity: 1; box-shadow: 0 0 8px currentColor; }
         
@@ -99,10 +162,14 @@
         #restart-btn:hover { transform: scale(1.05); }
         
         /* Kill Counter */
-        #kill-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 30px; border-radius: 20px; color: white; font-size: 18px; z-index: 100; }
+        #kill-counter { position: absolute; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.7); padding: 10px 30px; border-radius: 20px; color: white; font-size: 18px; z-index: 100; }
+        
+        /* Dash hint (bottom-left, safe-area aware) */
+        #dash-hint { position: absolute; bottom: max(20px, env(safe-area-inset-bottom)); left: max(20px, env(safe-area-inset-left)); color: #ffdd44; font-size: 14px; pointer-events: none; z-index: 100; }
         
         /* Damage Flash */
         #damage-flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255, 0, 0, 0.3); pointer-events: none; opacity: 0; z-index: 50; transition: opacity 0.1s ease; }
+        #kraken-vignette { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 50; opacity: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(180, 20, 0, 0.6) 100%); transition: opacity 0.1s; }
         
         /* Pause */
         #pause-indicator { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); padding: 30px 50px; border-radius: 15px; color: white; font-size: 24px; text-align: center; z-index: 150; display: none; }
@@ -222,6 +289,19 @@
         #debug-screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; z-index: 350; color: white; padding: 0; overflow: hidden; }
         #debug-screen h2 { font-size: 36px; color: #ff4444; margin: 20px 0 10px 0; text-transform: uppercase; letter-spacing: 3px; }
         #debug-screen .subtitle { font-size: 14px; color: #888; margin-bottom: 20px; }
+        
+        /* Visual tab: show world behind via right-side debug panel */
+        #debug-screen.debug-screen-visual-panel {
+            left: auto;
+            width: 380px;
+            max-width: 95vw;
+            align-items: stretch;
+            overflow-y: auto;
+        }
+        #debug-screen.debug-screen-visual-panel .debug-tab-content {
+            max-width: 100%;
+            padding: 16px;
+        }
         
         /* Quick Bar (sticky) */
         .debug-quick-bar { position: sticky; top: 0; width: 100%; background: rgba(0, 0, 0, 0.98); border-bottom: 2px solid #444; padding: 10px 20px; display: flex; gap: 10px; flex-wrap: wrap; z-index: 10; }
@@ -370,6 +450,31 @@
         #close-modules { padding: 15px 40px; font-size: 18px; background: transparent; border: 2px solid #666; border-radius: 10px; cursor: pointer; color: white; transition: all 0.3s ease; margin-bottom: 30px; }
         #close-modules:hover { border-color: #00ffff; color: #00ffff; }
         
+        /* Current Run Section */
+        .current-run-subsection { margin-bottom: 30px; padding: 20px; background: rgba(0, 255, 255, 0.05); border: 1px solid rgba(0, 255, 255, 0.2); border-radius: 10px; }
+        .subsection-title { font-size: 16px; color: #00ffff; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+        .current-run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+        .current-stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        
+        /* Active Ability Card */
+        .active-ability-card { background: rgba(0, 255, 255, 0.1); border: 2px solid #00ffff; border-radius: 8px; padding: 15px; }
+        .active-ability-card .ability-icon { font-size: 36px; margin-bottom: 8px; }
+        .active-ability-card .ability-name { font-size: 16px; font-weight: bold; color: #00ffff; margin-bottom: 8px; }
+        .active-ability-card .ability-level { display: inline-block; padding: 3px 10px; background: rgba(0, 255, 255, 0.2); border-radius: 8px; font-size: 11px; color: #00ffff; margin-bottom: 8px; }
+        .active-ability-card .ability-stats { font-size: 12px; color: #aaa; line-height: 1.6; }
+        
+        /* Active Item Card */
+        .active-item-card { background: rgba(20, 20, 40, 0.8); border: 2px solid #444; border-radius: 8px; padding: 15px; text-align: center; }
+        .active-item-card.combo { border-color: #88ffaa; background: rgba(136, 255, 170, 0.1); }
+        .active-item-card .item-icon { font-size: 36px; margin-bottom: 8px; }
+        .active-item-card .item-name { font-size: 16px; font-weight: bold; margin-bottom: 8px; }
+        .active-item-card .item-desc { font-size: 12px; color: #aaa; }
+        
+        /* Current Stat Card */
+        .stat-card { background: rgba(20, 20, 40, 0.6); border: 1px solid #444; border-radius: 8px; padding: 12px; }
+        .stat-card .stat-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        .stat-card .stat-value { font-size: 18px; font-weight: bold; color: #00ffff; font-family: monospace; }
+        
         /* Pause menu buttons */
         #pause-roster-btn, #pause-modules-btn, #pause-main-menu-btn, #pause-debug-btn { margin-top: 20px; padding: 10px 25px; font-size: 14px; background: transparent; border: 2px solid #666; border-radius: 8px; cursor: pointer; color: #aaa; transition: all 0.3s ease; margin-left: 10px; }
         #pause-roster-btn:hover, #pause-modules-btn:hover, #pause-main-menu-btn:hover, #pause-debug-btn:hover { border-color: #ffdd44; color: #ffdd44; }
@@ -418,12 +523,12 @@
         .help-section li { margin: 4px 0; line-height: 1.5; }
         
         /* Feedback Overlay */
-        #feedback-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 400; color: white; padding: 20px; overflow-y: auto; }
+        #feedback-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 400; color: white; padding: 20px; overflow: hidden; }
         #feedback-overlay.visible { display: flex; }
-        .feedback-container { max-width: 500px; width: 100%; background: rgba(20, 20, 40, 0.9); border: 2px solid #00aaff; border-radius: 15px; padding: 30px; }
+        .feedback-container { max-width: 500px; width: 100%; max-height: min(calc(100vh - 40px), calc(100dvh - 40px)); overflow-y: auto; background: rgba(20, 20, 40, 0.9); border: 2px solid #00aaff; border-radius: 15px; padding: 20px; }
         .feedback-title { font-size: 28px; color: #00aaff; text-align: center; margin-bottom: 5px; }
-        .feedback-version { font-size: 14px; color: #666; text-align: center; margin-bottom: 25px; }
-        .feedback-question { margin-bottom: 20px; }
+        .feedback-version { font-size: 14px; color: #666; text-align: center; margin-bottom: 15px; }
+        .feedback-question { margin-bottom: 12px; }
         .feedback-question-label { font-size: 16px; color: #fff; margin-bottom: 10px; display: block; }
         .feedback-options { display: flex; flex-wrap: wrap; gap: 10px; }
         .feedback-option { flex: 1 1 45%; min-width: 120px; padding: 12px 16px; background: rgba(255,255,255,0.05); border: 2px solid #444; border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.2s ease; font-size: 14px; color: #aaa; }
@@ -439,7 +544,7 @@
         .feedback-input { width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 2px solid #444; border-radius: 8px; color: #fff; font-size: 14px; font-family: inherit; }
         .feedback-input:focus { border-color: #00aaff; outline: none; }
         .feedback-input::placeholder { color: #666; }
-        .feedback-buttons { display: flex; gap: 15px; margin-top: 25px; justify-content: center; }
+        .feedback-buttons { display: flex; gap: 15px; margin-top: 18px; justify-content: center; }
         #feedback-submit { padding: 15px 40px; font-size: 18px; background: linear-gradient(135deg, #00aaff, #0077cc); border: none; border-radius: 10px; cursor: pointer; color: white; font-weight: bold; transition: all 0.3s ease; }
         #feedback-submit:hover { transform: scale(1.05); box-shadow: 0 5px 20px rgba(0, 170, 255, 0.4); }
         #feedback-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
@@ -477,6 +582,7 @@
     
     <div id="game-container">
         <div id="damage-flash"></div>
+        <div id="kraken-vignette"></div>
         
         <!-- HUD -->
         <div id="hud">
@@ -503,9 +609,31 @@
             </div>
         </div>
         
+        <!-- Stats and Blueprints Panel -->
+        <div class="hud-stats-panel">
+            <div class="stats-section">
+                <div class="stat-row">
+                    <span class="stat-name">Speed:</span>
+                    <span class="stat-value" id="stat-move-speed">0.15</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-name">Damage:</span>
+                    <span class="stat-value" id="stat-damage">10</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-name">Attack:</span>
+                    <span class="stat-value" id="stat-attack-speed">0.20</span>
+                </div>
+            </div>
+            <div class="blueprints-section" id="blueprints-display">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+        
         <div id="crosshair"></div>
         <div id="kill-counter">Kills: <span id="kills">0</span></div>
         <div id="dash-hint" style="position: absolute; bottom: 20px; left: 20px; color: #ffdd44; font-size: 14px; pointer-events: none; z-index: 100;">SHIFT: DASH (LOCKED)</div>
+        <div id="siphon-hint" style="position: absolute; bottom: 42px; left: 20px; color: #44ffcc; font-size: 14px; pointer-events: none; z-index: 100;">E: SIPHON (LOCKED)</div>
         
         <!-- Announcements -->
         <div id="wave-announcement">
@@ -659,6 +787,8 @@
                 <button id="quick-hitboxes" class="debug-btn" title="Toggle Hitboxes">Hitboxes</button>
                 <button id="quick-screenshot" class="debug-btn" title="Screenshot">Screenshot</button>
                 <button id="quick-snapshot" class="debug-btn" title="Copy Debug Snapshot">Snapshot</button>
+                <button id="quick-placement" class="debug-btn" title="Toggle Level Placement Mode">Placement</button>
+                <button id="quick-export-layout" class="debug-btn" title="Export Layout JSON (Ctrl+S in placement mode)">Export Layout</button>
             </div>
             
             <!-- Tab Navigation -->
@@ -692,6 +822,16 @@
                             <button id="debug-toggle-invincible" class="debug-btn">Toggle Invincibility</button>
                             <button id="debug-full-heal" class="debug-btn success">Full Heal</button>
                             <button id="debug-unlock-all" class="debug-btn">Unlock All Mechanics</button>
+                        </div>
+                    </div>
+                    <div class="debug-section" id="debug-placement-section">
+                        <h3>Level layout</h3>
+                        <p class="subtitle">Placement mode: click ground to place, Ctrl+S to export JSON</p>
+                        <div class="debug-controls">
+                            <label><input type="checkbox" id="debug-placement-mode" /> Placement mode</label>
+                            <span class="debug-label">Type:</span>
+                            <select id="debug-placement-type" class="debug-select"></select>
+                            <button id="debug-export-layout" class="debug-btn">Export layout JSON</button>
                         </div>
                     </div>
                 </div>
@@ -816,9 +956,20 @@
                             <input id="debug-tuning-elite-chance" class="debug-slider" type="range" min="0.00" max="0.50" step="0.01" value="0.00">
                             <span id="debug-tuning-elite-chance-value" class="debug-value">0%</span>
                         </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Kraken %</span>
+                            <input id="debug-tuning-kraken-chance" class="debug-slider" type="range" min="0" max="99" step="1" value="1">
+                            <span id="debug-tuning-kraken-chance-value" class="debug-value">1%</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Kraken Interval</span>
+                            <input id="debug-tuning-kraken-interval" class="debug-slider" type="range" min="1" max="10" step="1" value="10">
+                            <span id="debug-tuning-kraken-interval-value" class="debug-value">10s</span>
+                        </div>
                         <div class="debug-controls" style="margin-top: 10px;">
                             <button id="debug-toggle-boss-rush" class="debug-btn">Boss Rush: OFF</button>
                             <button id="debug-toggle-attack-cone" class="debug-btn">Attack Cone: ON</button>
+                            <button id="debug-toggle-krakens-pulse" class="debug-btn">Kraken's Pulse: OFF</button>
                         </div>
                     </div>
                     <div class="debug-section">
@@ -844,6 +995,62 @@
                             <button id="debug-toggle-hitboxes" class="debug-btn">Hitboxes: OFF</button>
                             <button id="debug-toggle-particles" class="debug-btn">Particles: ON</button>
                             <button id="debug-toggle-vfx" class="debug-btn">VFX: ON</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Brightness</h3>
+                        <div class="debug-row">
+                            <span class="debug-label">Exposure</span>
+                            <input id="debug-visual-exposure" class="debug-slider" type="range" min="0.50" max="2.00" step="0.05" value="1.00">
+                            <span id="debug-visual-exposure-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Ambient</span>
+                            <input id="debug-visual-ambient" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-visual-ambient-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Directional</span>
+                            <input id="debug-visual-directional" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-visual-directional-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Point Lights</span>
+                            <input id="debug-visual-point-lights" class="debug-slider" type="range" min="0.50" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-visual-point-lights-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Bloom</span>
+                            <input id="debug-visual-bloom-strength" class="debug-slider" type="range" min="0" max="0.40" step="0.01" value="0.20">
+                            <span id="debug-visual-bloom-strength-value" class="debug-value">0.20</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Ground Albedo</span>
+                            <input id="debug-visual-ground-albedo" class="debug-slider" type="range" min="0.70" max="1.50" step="0.05" value="1.00">
+                            <span id="debug-visual-ground-albedo-value" class="debug-value">1.00x</span>
+                        </div>
+                        <div class="debug-row">
+                            <span class="debug-label">Emissive</span>
+                            <input id="debug-visual-emissive" class="debug-slider" type="range" min="0" max="1.00" step="0.01" value="0.35">
+                            <span id="debug-visual-emissive-value" class="debug-value">0.35</span>
+                        </div>
+                        <div class="debug-controls" style="margin-top: 10px;">
+                            <button id="debug-visual-brightness-reset" class="debug-btn">Reset Brightness</button>
+                            <button id="debug-visual-classic-preset" class="debug-btn">Classic (0.4 style)</button>
+                        </div>
+                    </div>
+                    <div class="debug-section">
+                        <h3>Calibration wall</h3>
+                        <div class="debug-controls" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                            <label class="debug-row" style="cursor: pointer;">
+                                <input id="debug-visual-calibration-wall" type="checkbox">
+                                <span class="debug-label" style="margin-left: 6px;">Show calibration wall</span>
+                            </label>
+                            <div class="debug-row">
+                                <span class="debug-label">Calibration wall emissive</span>
+                                <input id="debug-visual-calibration-emissive" class="debug-slider" type="range" min="0" max="2" step="0.05" value="0">
+                                <span id="debug-visual-calibration-emissive-value" class="debug-value">0.00</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1043,6 +1250,28 @@
         <div id="modules-screen">
             <h2>MODULES</h2>
             <div id="modules-content">
+                <div class="modules-section">
+                    <h3>Current Run</h3>
+                    <p class="section-subtitle">Active abilities, items, and stats for this run</p>
+                    
+                    <!-- Active Abilities -->
+                    <div class="current-run-subsection">
+                        <h4 class="subsection-title">Active Abilities</h4>
+                        <div id="active-abilities-grid" class="current-run-grid"></div>
+                    </div>
+                    
+                    <!-- Active Items/Blueprints -->
+                    <div class="current-run-subsection">
+                        <h4 class="subsection-title">Active Items</h4>
+                        <div id="active-items-grid" class="current-run-grid"></div>
+                    </div>
+                    
+                    <!-- Current Stats -->
+                    <div class="current-run-subsection">
+                        <h4 class="subsection-title">Current Stats</h4>
+                        <div id="current-stats-grid" class="current-stats-grid"></div>
+                    </div>
+                </div>
                 <div class="modules-section">
                     <h3>Core Upgrades</h3>
                     <p class="section-subtitle">Always available in level-up choices</p>

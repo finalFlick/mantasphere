@@ -12,3 +12,13 @@ js/config/debug.local.js
 # GitHub App auth (never commit)
 .secrets/
 *.pem
+
+# Generated backlog / Manta-Warden tooling outputs (optional: move to docs/ if keeping)
+backlog_analysis.json
+clarification_analysis.json
+dependencies.json
+duplicate_verification.json
+grouped_issues.json
+hygiene_actions.json
+issues_backlog.json
+MANTA_WARDEN_REPORT.md

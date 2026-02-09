@@ -11,7 +11,7 @@ A 3D arcade-style arena survival game built with Three.js. Survive waves of enem
 ```bash
 python -m http.server 8000
 ```
-Then open http://localhost:8000/index.dev.html
+Then open http://localhost:8000
 
 Debug enabled, no build required. Great for quick testing.
 
@@ -60,6 +60,8 @@ Then pull on Unraid: `ghcr.io/finalflick/mantasphere:latest`
 | `npm run build` | Production build (minified, debug disabled) |
 | `npm run serve` | Start Python server on port 8000 |
 | `npm run start` | Build and serve in one command |
+
+**Assets:** Game textures (ground, stone, wood, VFX) live in `assets/textures/` and are loaded at startup by `js/systems/textures.js`. See [docs/ASSETS.md](docs/ASSETS.md) for the texture inventory and map types. To regenerate textures deterministically: `npm run generate:textures` (skips existing files); use `npm run generate:textures -- --force` to overwrite.
 
 ### Play
 

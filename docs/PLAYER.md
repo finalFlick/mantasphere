@@ -49,7 +49,7 @@ The player character in SPHERESTORM is a **manta ray-inspired flying entity** th
 - **A** - Strafe left (50% speed - encourages camera turning)
 - **D** - Strafe right (50% speed - encourages camera turning)
 
-**Base Speed:** 0.15 units/frame
+**Base Speed:** 0.08 units/frame
 
 **Movement Characteristics:**
 - Camera-relative direction (always moves where you're looking)
@@ -104,6 +104,13 @@ When landing from a jump, the player bounces up to 3 times with diminishing heig
 
 **Landing Particle:** Blue particle burst on first bounce
 
+**Stomp / Crush:**
+- Landing on an enemy from above (descending, XZ overlap, player bottom at enemy top) counts as a stomp and deals crush damage (scales with damage stat).
+- **Lethal stomp:** If the stomp kills the enemy, the player lands normally on the arena floor (no bounce).
+- **Non-lethal stomp:** If the enemy survives, the player bounces upward and is pushed away horizontally. You can steer back for a second stomp, but the push favors pushing you away, making follow-up stomps a deliberate choice.
+- Stomping an enemy does not trigger contact damage from that enemy on the same frame.
+- Damage uses the same shield-then-HP pipeline as projectiles and Dash Strike.
+
 ---
 
 ### Collision System
@@ -145,6 +152,8 @@ When landing from a jump, the player bounces up to 3 times with diminishing heig
 ---
 
 ## Combat System
+
+Damage to enemies can be dealt via **projectiles** (auto-targeted), **Dash Strike** (when unlocked), and **stomp/crush** (landing on enemies from above; see [Jump & Bounce System](#jump--bounce-system)).
 
 ### Auto-Targeting
 
@@ -206,6 +215,8 @@ Items collected from chests are **blueprints** that require a level-up choice to
 - **Pierce**: Projectile passes through 1 extra target before being consumed
 - **Chain**: On hit, a secondary bolt arcs to 1 nearby enemy (50% damage, 12-unit range)
 - **Explosion**: On hit, deals 40% AoE damage within 3-unit radius
+- **Kraken's Pulse**: Passive proc weapon — 1% chance every 10 seconds to trigger a cinematic hellfire shockwave that obliterates all enemies with 9999 damage. Features a three-phase visual sequence (Tell → Pulse → Aftermath) with floating damage numbers, arena darkening, and dramatic audio. Elite enemies get multi-pop death animations.
+- **Siphon**: Active ability (E key) — pull all XP orbs on the arena at once. Cooldown: 20s.
 - **Combo — Razor Swarm**: Having both Pierce and Chain active
 
 **Blueprint Unlock Flow:**

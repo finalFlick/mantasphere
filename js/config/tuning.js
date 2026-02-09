@@ -70,7 +70,23 @@ export const TUNING = {
   // Force treasure runner spawn (debug-only). When enabled, runner spawns immediately if conditions met.
   forceTreasureRunner: false,
 
-  // Attack cone preview (currently always shown). Toggle is for experimentation.
-  attackConePreviewEnabled: true,
+// Attack cone preview (currently always shown). Toggle is for experimentation.
+    attackConePreviewEnabled: true,
+
+    // Arena zone effect strength (Arena 1 skatepark: momentum, slow, etc.). 1.0 = default.
+    arenaZoneStrength: 1.0,
+    // Arena 1 dynamic events (Wave 3+): chance per frame to spawn when cooldown is 0.
+    arena1EventChancePerFrame: 0.002,
+    arena1EventCooldownMinFrames: 480,
+    arena1EventCooldownMaxFrames: 900,
+
+  // ==================== BRIGHTNESS (debug Visual tab sliders; 0.4.x-style defaults) ====================
+  exposureMultiplier: 1.0,
+  ambientLightMultiplier: 1.0,
+  directionalLightMultiplier: 1.0,
+  pointLightsMultiplier: 1.0,
+  bloomStrength: 0.2,
+  groundAlbedoMultiplier: 1.0,
+  emissiveMultiplier: 0.35,
 };
 

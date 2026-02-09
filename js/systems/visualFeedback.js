@@ -1,6 +1,8 @@
 import { scene } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
+import { setEmissiveIntensity } from './materialUtils.js';
 import { SLOW_MO_LERP_SPEED, SCREEN_FLASH_DEFAULT_DURATION } from '../config/constants.js';
+import { Textures } from '../systems/textures.js';
 
 // Visual Feedback System - Centralized telegraph and success feedback
 // Implements consistent visual language across all game mechanics
@@ -1882,9 +1884,9 @@ export function updateTemporaryWall(wall) {
     
     // Pulse warning when about to disappear
     if (wall.remainingDuration < 30 && wall.remainingDuration % 10 < 5) {
-        wall.material.emissiveIntensity = 0.5;
+        setEmissiveIntensity(wall.material, 0.5);
     } else {
-        wall.material.emissiveIntensity = 0.3;
+        setEmissiveIntensity(wall.material, 0.3);
     }
     
     return wall.remainingDuration <= 0;
@@ -2676,13 +2678,17 @@ export function updateFakeEmergeMarker(marker) {
 export function createVineZone(position, radius, duration = 5.0) {
     const group = new THREE.Group();
     
-    // Ground texture - circular vine pattern
+    // Ground texture - circular vine pattern (optional VFX texture)
     const groundMat = new THREE.MeshBasicMaterial({
-        color: 0x228822,  // Dark green
+        color: 0x228822,
         transparent: true,
         opacity: 0.4,
         side: THREE.DoubleSide
     });
+    if (Textures.vfxEnergyRing) {
+        groundMat.map = Textures.vfxEnergyRing;
+        groundMat.color.setHex(0xffffff);
+    }
     const ground = new THREE.Mesh(
         getCircleGeometry(radius, 32),
         groundMat

@@ -8,13 +8,15 @@
     "serve": "python -m http.server 8000",
     "start": "npm run build && python -m http.server 8000",
     "feedback-sync": "node scripts/feedback-sync.js",
-    "calc-xp": "node scripts/calculate-arena-xp.cjs"
+    "calc-xp": "node scripts/calculate-arena-xp.cjs",
+    "generate:textures": "node scripts/generate-textures.cjs"
   },
   "dependencies": {
-    "googleapis": "^171.4.0",
-    "@octokit/rest": "^22.0.1"
+    "@octokit/rest": "^22.0.1",
+    "googleapis": "^171.4.0"
   },
   "devDependencies": {
-    "esbuild": "^0.27.3"
+    "esbuild": "^0.27.3",
+    "pngjs": "^7.0.0"
   }
 }

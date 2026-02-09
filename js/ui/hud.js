@@ -10,6 +10,7 @@ import { MODULE_CONFIG } from '../config/modules.js';
 import { safeLocalStorageGet, safeLocalStorageSet } from '../utils/storage.js';
 import { keys } from '../core/input.js';
 import { getDashStrikeCooldownProgress } from '../entities/player.js';
+import { PROJECTILE_ITEMS, getActiveCombination } from '../config/items.js';
 
 export let gameStartTime = 0;
 
@@ -22,6 +23,12 @@ let bossHealthFlashTimer = 0;
 let controlsOverlayEl = null;
 let controlsOverlayKeyEls = null;
 
+// Notification queue (single #unlock-notification element; queue avoids overwrites)
+const NOTIFICATION_QUEUE_MAX = 3;
+const MODIFIER_ANNOUNCEMENT_MS = 3500;
+let notificationQueue = [];
+let notificationTimerId = null;
+
 export function setGameStartTime(time) {
     gameStartTime = time;
 }
@@ -32,6 +39,125 @@ export function updateMusicStatusDisplay(enabled) {
         const el = document.getElementById(id);
         if (el) el.textContent = enabled ? 'Music: ON' : 'Music: OFF';
     });
+}
+
+/**
+ * Format blueprint values for display
+ * @param {string} blueprintId - The blueprint ID (e.g., 'pierce', 'chain', 'explosion')
+ * @returns {string|null} Formatted display string or null if invalid
+ */
+function formatBlueprintDisplay(blueprintId) {
+    const item = PROJECTILE_ITEMS[blueprintId];
+    if (!item) return null;
+    
+    switch(blueprintId) {
+        case 'pierce':
+            return `+${item.extraPierceTargets} target`;
+        case 'chain':
+            return `${item.chainTargets} bolt, ${item.chainRange} range, ${Math.round(item.chainDamageMult * 100)}% dmg`;
+        case 'explosion':
+            return `${item.explosionRadius} radius, ${Math.round(item.explosionDamageMult * 100)}% dmg`;
+        case 'siphon':
+            return `E: Pull all XP (${item.cooldownSeconds ?? 20}s CD)`;
+        default:
+            return '';
+    }
+}
+
+/**
+ * Update stats display (movement speed, damage, attack speed)
+ */
+function updateStatsDisplay() {
+    const moveSpeedEl = document.getElementById('stat-move-speed');
+    const damageEl = document.getElementById('stat-damage');
+    const attackSpeedEl = document.getElementById('stat-attack-speed');
+    
+    if (moveSpeedEl) {
+        moveSpeedEl.textContent = gameState.stats.moveSpeed.toFixed(2);
+    }
+    if (damageEl) {
+        damageEl.textContent = gameState.stats.damage;
+    }
+    if (attackSpeedEl) {
+        attackSpeedEl.textContent = gameState.stats.attackSpeed.toFixed(2);
+    }
+}
+
+/**
+ * Update blueprints display with active blueprints and their values
+ */
+function updateBlueprintsDisplay() {
+    const container = document.getElementById('blueprints-display');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    // Get active blueprints from gameState.blueprints.unlocked
+    if (!gameState.blueprints || !gameState.blueprints.unlocked) {
+        return;
+    }
+    
+    const unlockedBlueprints = Array.from(gameState.blueprints.unlocked);
+    
+    // Display each active blueprint
+    for (const blueprintId of unlockedBlueprints) {
+        const item = PROJECTILE_ITEMS[blueprintId];
+        if (!item) continue;
+        
+        const formattedValues = formatBlueprintDisplay(blueprintId);
+        if (!formattedValues) continue;
+        
+        const blueprintEl = document.createElement('div');
+        blueprintEl.className = 'blueprint-item';
+        const colorHex = item.color.toString(16).padStart(6, '0');
+        blueprintEl.style.borderLeftColor = `#${colorHex}`;
+        
+        const iconEl = document.createElement('span');
+        iconEl.className = 'blueprint-icon';
+        iconEl.textContent = item.icon ?? '📦';
+        
+        const nameEl = document.createElement('div');
+        nameEl.className = 'blueprint-name';
+        nameEl.style.color = `#${colorHex}`;
+        nameEl.appendChild(iconEl);
+        nameEl.appendChild(document.createTextNode(' ' + item.name));
+        
+        const valuesEl = document.createElement('div');
+        valuesEl.className = 'blueprint-values';
+        valuesEl.textContent = formattedValues;
+        
+        blueprintEl.appendChild(nameEl);
+        blueprintEl.appendChild(valuesEl);
+        container.appendChild(blueprintEl);
+    }
+    
+    // Check for Razor Swarm combo
+    // Use heldItems for combo check since that's what getActiveCombination expects
+    const combo = getActiveCombination(gameState.heldItems || []);
+    if (combo) {
+            const comboEl = document.createElement('div');
+            comboEl.className = 'blueprint-item';
+            const colorHex = combo.color.toString(16).padStart(6, '0');
+            comboEl.style.borderLeftColor = `#${colorHex}`;
+            
+            const iconEl = document.createElement('span');
+            iconEl.className = 'blueprint-icon';
+            iconEl.textContent = combo.icon ?? '📦';
+            
+            const nameEl = document.createElement('div');
+            nameEl.className = 'blueprint-name';
+            nameEl.style.color = `#${colorHex}`;
+            nameEl.appendChild(iconEl);
+            nameEl.appendChild(document.createTextNode(' ' + combo.name));
+            
+            const valuesEl = document.createElement('div');
+            valuesEl.className = 'blueprint-values';
+            valuesEl.textContent = 'Pierce + Chain combo';
+            
+            comboEl.appendChild(nameEl);
+            comboEl.appendChild(valuesEl);
+            container.appendChild(comboEl);
+    }
 }
 
 export function updateUI() {
@@ -67,8 +193,13 @@ export function updateUI() {
     updateStatBadges();
     updateBadgeDisplay();
     
+    // Update stats and blueprints display
+    updateStatsDisplay();
+    updateBlueprintsDisplay();
+    
     // Dash hint (always visible, context-aware)
     updateDashHint();
+    updateSiphonHint();
 
     // Controls overlay (bottom-right keycaps)
     updateControlsOverlay();
@@ -134,6 +265,35 @@ function updateDashHint() {
         el.textContent = 'SHIFT: DASH (LOCKED)';
         el.classList.add('locked');
         el.style.opacity = '0.5';
+    }
+}
+
+function updateSiphonHint() {
+    const el = document.getElementById('siphon-hint');
+    if (!el) return;
+
+    const hasSiphon = !!(gameState.heldItems && gameState.heldItems.includes('siphon'));
+    if (!hasSiphon) {
+        el.textContent = 'E: SIPHON (LOCKED)';
+        el.classList.add('locked');
+        el.style.opacity = '0.5';
+        return;
+    }
+
+    el.classList.remove('locked');
+    const siphonItem = PROJECTILE_ITEMS.siphon;
+    const cooldownSeconds = (siphonItem && siphonItem.cooldownSeconds) ? siphonItem.cooldownSeconds : 20;
+    const cooldownFrames = cooldownSeconds * 60;
+    const timer = gameState.siphonCooldownTimer || 0;
+
+    if (timer > 0) {
+        const cooldownProgress = 1 - (timer / cooldownFrames);
+        const cooldownPct = Math.floor(cooldownProgress * 100);
+        el.textContent = `E: SIPHON (${cooldownPct}%)`;
+        el.style.opacity = '0.6';
+    } else {
+        el.textContent = 'E: SIPHON';
+        el.style.opacity = '1';
     }
 }
 
@@ -566,11 +726,74 @@ export function hideBossHealthBar() {
     if (seqEl) seqEl.style.display = 'none';
 }
 
-export function showUnlockNotification(text) {
+// ---------- Notification queue (internal) ----------
+function resetNotificationStyles(el) {
+    if (!el) return;
+    el.style.background = '';
+    el.style.backgroundColor = '';
+    el.style.color = '';
+}
+
+function showNextQueuedNotification() {
+    notificationTimerId = null;
     const el = document.getElementById('unlock-notification');
-    document.getElementById('unlock-text').textContent = text;
+    const textEl = document.getElementById('unlock-text');
+    if (!el || !textEl) return;
+    if (notificationQueue.length === 0) {
+        resetNotificationStyles(el);
+        return;
+    }
+    const item = notificationQueue.shift();
+    textEl.textContent = item.text;
+    if (item.style) {
+        if (item.style.background != null) el.style.background = item.style.background;
+        if (item.style.backgroundColor != null) el.style.backgroundColor = item.style.backgroundColor;
+        if (item.style.color != null) el.style.color = item.style.color;
+    } else {
+        resetNotificationStyles(el);
+    }
     el.classList.add('visible');
-    setTimeout(() => el.classList.remove('visible'), 3000);
+    notificationTimerId = setTimeout(() => {
+        el.classList.remove('visible');
+        resetNotificationStyles(el);
+        showNextQueuedNotification();
+    }, item.duration);
+}
+
+/**
+ * Schedule a notification to show in the center (unlock-notification).
+ * If one is visible, the item is queued (max NOTIFICATION_QUEUE_MAX). Options: { text, duration, style?: { background?, backgroundColor?, color? } }
+ * @param {{ text: string, duration: number, style?: { background?: string, backgroundColor?: string, color?: string } }} options
+ */
+function scheduleNotification(options) {
+    const el = document.getElementById('unlock-notification');
+    const textEl = document.getElementById('unlock-text');
+    if (!el || !textEl) return;
+    const item = { text: options.text, duration: options.duration, style: options.style || null };
+    if (notificationTimerId != null) {
+        if (notificationQueue.length < NOTIFICATION_QUEUE_MAX) {
+            notificationQueue.push(item);
+        }
+        return;
+    }
+    textEl.textContent = item.text;
+    if (item.style) {
+        if (item.style.background != null) el.style.background = item.style.background;
+        if (item.style.backgroundColor != null) el.style.backgroundColor = item.style.backgroundColor;
+        if (item.style.color != null) el.style.color = item.style.color;
+    } else {
+        resetNotificationStyles(el);
+    }
+    el.classList.add('visible');
+    notificationTimerId = setTimeout(() => {
+        el.classList.remove('visible');
+        resetNotificationStyles(el);
+        showNextQueuedNotification();
+    }, item.duration);
+}
+
+export function showUnlockNotification(text) {
+    scheduleNotification({ text, duration: 3000 });
 }
 
 // Tutorial callouts (shown only once per mechanic)
@@ -586,24 +809,15 @@ const tutorialShown = {
 export function showTutorialCallout(type, text, duration = 2000) {
     if (tutorialShown[type]) return;
     tutorialShown[type] = true;
-    
-    const el = document.getElementById('unlock-notification');
-    document.getElementById('unlock-text').textContent = text;
-    el.classList.add('visible');
-    setTimeout(() => el.classList.remove('visible'), duration);
+    scheduleNotification({ text, duration });
 }
 
 export function showExposedBanner() {
-    const el = document.getElementById('unlock-notification');
-    document.getElementById('unlock-text').textContent = '⚡ EXPOSED ⚡';
-    el.classList.add('visible');
-    el.style.backgroundColor = 'rgba(255, 221, 68, 0.9)';
-    el.style.color = '#000';
-    setTimeout(() => {
-        el.classList.remove('visible');
-        el.style.backgroundColor = '';
-        el.style.color = '';
-    }, 1000);
+    scheduleNotification({
+        text: '⚡ EXPOSED ⚡',
+        duration: 1000,
+        style: { backgroundColor: 'rgba(255, 221, 68, 0.9)', color: '#000' }
+    });
 }
 
 // Show combo chain indicator
@@ -676,29 +890,24 @@ export function hideBoss6SequencePreview() {
 
 // Show wave modifier announcement
 export function showModifierAnnouncement(modifierName) {
-    const el = document.getElementById('unlock-notification');
-    document.getElementById('unlock-text').textContent = modifierName;
-    el.style.background = 'linear-gradient(135deg, rgba(255, 136, 68, 0.9), rgba(255, 68, 68, 0.9))';
-    el.classList.add('visible');
-    setTimeout(() => {
-        el.classList.remove('visible');
-        el.style.background = '';
-    }, 6000);  // 3x longer (was 2000ms)
+    scheduleNotification({
+        text: modifierName,
+        duration: MODIFIER_ANNOUNCEMENT_MS,
+        style: { background: 'linear-gradient(135deg, rgba(255, 136, 68, 0.9), rgba(255, 68, 68, 0.9))' }
+    });
 }
 
 // Show boss phase transition announcement
 export function showPhaseAnnouncement(phase, bossName) {
-    const el = document.getElementById('unlock-notification');
     const phaseText = phase === 2 ? 'PHASE II' : 'PHASE III';
-    document.getElementById('unlock-text').textContent = `${bossName} - ${phaseText}`;
-    el.style.background = phase === 3 
+    const background = phase === 3
         ? 'linear-gradient(135deg, rgba(255, 68, 68, 0.9), rgba(180, 0, 0, 0.9))'
         : 'linear-gradient(135deg, rgba(255, 170, 68, 0.9), rgba(255, 100, 0, 0.9))';
-    el.classList.add('visible');
-    setTimeout(() => {
-        el.classList.remove('visible');
-        el.style.background = '';
-    }, 1500);
+    scheduleNotification({
+        text: `${bossName} - ${phaseText}`,
+        duration: 1500,
+        style: { background }
+    });
 }
 
 // ==================== MODULE UNLOCK BANNER ====================
@@ -711,39 +920,17 @@ export function showPhaseAnnouncement(phase, bossName) {
  * @param {boolean} isUnlock - True if this is the first unlock (L1), false if upgrade
  */
 export function showModuleUnlockBanner(moduleId, level, isUnlock = false) {
-    const el = document.getElementById('unlock-notification');
-    if (!el) return;
-    
-    // Get module config for display name
     const config = MODULE_CONFIG.unlockable[moduleId];
     const moduleName = config?.name || moduleId;
     const moduleIcon = config?.icon || '📦';
-    
-    // Build banner text
-    let text;
-    if (isUnlock) {
-        text = `${moduleIcon} ${moduleName.toUpperCase()} UNLOCKED!`;
-    } else {
-        text = `${moduleIcon} ${moduleName.toUpperCase()} - MASTERY L${level}`;
-    }
-    
-    document.getElementById('unlock-text').textContent = text;
-    
-    // Cyan/teal gradient for module unlocks
-    el.style.background = isUnlock
+    const text = isUnlock
+        ? `${moduleIcon} ${moduleName.toUpperCase()} UNLOCKED!`
+        : `${moduleIcon} ${moduleName.toUpperCase()} - MASTERY L${level}`;
+    const duration = isUnlock ? 2500 : 2000;
+    const background = isUnlock
         ? 'linear-gradient(135deg, rgba(0, 255, 255, 0.9), rgba(0, 180, 200, 0.9))'
         : 'linear-gradient(135deg, rgba(100, 255, 255, 0.9), rgba(0, 200, 220, 0.9))';
-    el.style.color = '#000';
-    
-    el.classList.add('visible');
-    
-    // Longer display time for unlocks
-    const duration = isUnlock ? 2500 : 2000;
-    setTimeout(() => {
-        el.classList.remove('visible');
-        el.style.background = '';
-        el.style.color = '';
-    }, duration);
+    scheduleNotification({ text, duration, style: { background, color: '#000' } });
 }
 
 // ==================== BOSS 6 CYCLE INDICATOR ====================

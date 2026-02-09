@@ -8,7 +8,7 @@ export const ENEMY_TYPES = {
         name: 'Red Puffer',
         size: 0.65,          // Standard - noticeably bigger than tiny
         health: 12,
-        speed: 0.055,        // Faster (+57%)
+        speed: 0.08,         // Faster than tiny (0.07) - Wave 2 enemy
         damage: 10,
         color: 0xff4444,     // Mid-red - between pink tiny and dark big
         xpValue: 3,          // Tripled from 1
@@ -17,6 +17,10 @@ export const ENEMY_TYPES = {
         arenaIntro: 1,       // Introduced in Arena 1
         minWave: 2,          // Only spawns Wave 2+ (Wave 1 is Tiny only)
         usePorcupinefishMesh: true,  // Uses mini porcupinefish visual (like Boss 1)
+        // Dash movement (micro-dash)
+        dashCooldownFrames: 180,      // 3 seconds between dashes
+        dashDurationFrames: 15,       // 0.25 second dash
+        dashSpeedMult: 2.5,           // Dash is 2.5x normal speed
         // Roster display fields
         tagline: 'Spawn of the King',
         description: 'Tiny offspring of the Red Puffer King. These aggressive puffers swarm in numbers, overwhelming through sheer persistence. What they lack in size, they make up for in relentless pursuit.',
@@ -61,7 +65,7 @@ export const ENEMY_TYPES = {
         name: 'Big Puffer',
         size: 1.1,           // Heavy - VERY large and intimidating
         health: 30,          // 3-shot at base damage (10)
-        speed: 0.04,         // Slower than standard (0.055)
+        speed: 0.10,         // Fastest (faster than grunt 0.08) - Wave 3 enemy
         damage: 15,          // More threatening
         color: 0x991111,     // Dark red - intimidating, clearly different
         xpValue: 9,          // Tripled from 3
@@ -70,6 +74,10 @@ export const ENEMY_TYPES = {
         arenaIntro: 1,       // Available in Arena 1
         minWave: 3,          // Only spawns Wave 3+ (pressure test)
         usePorcupinefishMesh: true,  // Same visual style, larger
+        // Dash movement (more frequent micro-dashes)
+        dashCooldownFrames: 120,      // 2 seconds between dashes (more frequent than grunt)
+        dashDurationFrames: 15,      // 0.25 second dash
+        dashSpeedMult: 3.0,           // Dash is 3.0x normal speed (faster than grunt)
         // Roster display fields
         tagline: 'The Elder Spawn',
         description: 'A mature Red Puffer that has grown larger and more resilient. Slower but more dangerous, these elders anchor the swarm with their bulk.',

@@ -38,7 +38,7 @@ function getEligibleUpgrades() {
                 pool.push({
                     id: `unlock_${blueprintId}`,
                     name: `Activate: ${item.name.toUpperCase()}`,
-                    icon: '📜',
+                    icon: item.icon ?? '📜',
                     desc: item.description,
                     type: 'blueprint',
                     blueprintId: blueprintId,

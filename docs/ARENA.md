@@ -10,6 +10,7 @@ This document provides comprehensive reference for SPHERESTORM's arena system, i
 - [Wave Modifiers](#wave-modifiers)
 - [Threat Budget System](#threat-budget-system)
 - [Geometry & Features](#geometry--features)
+- [Data-Driven Layout System](#data-driven-layout-system)
 - [Progression & Unlocks](#progression--unlocks)
 - [Implementation Guide](#implementation-guide)
 
@@ -76,12 +77,10 @@ Victory → Next Arena
 **Featured Enemy:** Red Puffer (only enemy type)
 
 **Geometry:**
-- Flat rectangular arena
-- Corner landmarks for orientation
-- Center reset pad marker (visual-only orientation anchor, radius ~12)
-- No obstacles or cover
-- Anti-edge spawn bias (discourages corner camping)
-- Min distance from corner: 15 units
+- Arena 1 is **layout-driven**: obstacles and landmarks come from `js/config/arenaLayouts.js` (`ARENA_1_LAYOUT`). This includes central bowl rim, halfpipe, ramp, tunnel, treasure platforms, slalom pillars, city catwalks, reset pad, cardinal lines, corner decals, city domes, and coral/rock prefabs.
+- Bowl geometry (skate park bowls), Pufferkeep Castle, and zone decals are still generated in code in `js/arena/generator.js` when Arena 1 uses a layout.
+- Player spawn and optional enemy spawner positions are defined in the layout.
+- Anti-edge spawn bias (discourages corner camping); min distance from corner: 15 units.
 
 **Spawn Readability (Arena 1 specific):**
 - Spawns prefer a **forward 180° arc** relative to player movement when possible (reduces rear “off-screen” spawns)
@@ -734,6 +733,33 @@ Wave completes when:
 
 ---
 
+## Data-Driven Layout System
+
+Arenas can be built from **layout data** (objects + prefabs) instead of only hard-coded geometry. Level design becomes editing layout data or using the debug placement tool.
+
+### Layout format
+
+`getArenaLayout(arenaNumber)` (in `js/config/arenaLayouts.js`) returns a layout object, or `undefined` to use legacy feature-based generation. Layout shape:
+
+- **`playerSpawn`** (optional): `{ x, z }` — used when starting the arena.
+- **`objects`**: Array of `{ type, x, z, ...opts }` — obstacle, pillar, platform, wall, ramp, slalom, catwalk, hazard, or landmark (with `typeId`: resetPad, decal, cardinalLine, dome). Options include `sizeX`, `height`, `sizeZ`, `rot`, `scale`, `materialKey`, `radius`, etc.
+- **`prefabs`** (optional): Array of `{ type, x, z, scale?, rot? }` — e.g. `coralCluster`, `rockCluster`.
+- **`enemySpawners`** (optional): Array of `{ x, z }` — for future spawn bias.
+
+### Flow
+
+In `generateArena()`, if `getArenaLayout(arenaNum)` returns a layout, `buildFromLayout(layout)` runs: it calls `spawn(entry.type, entry.x, entry.z, entry)` for each object and prefab. Arena-specific code (e.g. bowls, castle, zone decals for Arena 1) can still run after that. Arenas without a layout use the existing feature-based branches (pillars, vertical, platforms, etc.).
+
+### Spawn factory
+
+`js/arena/spawnFactory.js` provides `initSpawnFactory(context)` and `spawn(type, x, z, opts)`. Supported types include obstacle variants (obstacle, pillar, platform, wall, ramp, slalom, catwalk), hazard, landmark (resetPad, decal, cardinalLine, dome), and prefabs (coralCluster, rockCluster). Materials are selected by `materialKey`; prefabs are procedural groups placed at (x, z).
+
+### Debug placement (DEBUG only)
+
+`js/arena/placementEditor.js`: Toggle "Placement mode" in the debug menu; click on the ground to place the current type; Ctrl+S or "Export layout" copies layout JSON (objects + prefabs) to the clipboard. Use the type selector in the debug panel. Layouts can be designed in-game and pasted into config.
+
+---
+
 ## Progression & Unlocks
 
 ### Mechanic Unlocks
@@ -826,9 +852,11 @@ export const ARENA_CONFIG = {
 };
 ```
 
+**1b. Layout (optional – layout-driven arena):** Add a layout in `js/config/arenaLayouts.js`: create e.g. `ARENA_7_LAYOUT` with `playerSpawn`, `objects`, and optional `prefabs`. In `getArenaLayout(arenaNumber)` add a case that returns this layout for the new arena. Use object and prefab types from the spawn factory (see [Data-Driven Layout System](#data-driven-layout-system)); add new types in `js/arena/spawnFactory.js` if needed. Complex visual-only geometry (e.g. custom meshes) can remain in `js/arena/generator.js` and be invoked when `arenaNum === 7` after `buildFromLayout`.
+
 **2. Geometry Generation (`js/arena/generator.js`):**
 
-Add geometry generation:
+For arenas that **do not** use a layout, add geometry generation in the generator. When a layout **does** exist for that arena number, the generator uses `buildFromLayout(layout)` first and then may run arena-specific helpers (e.g. bowls, castle, zone decals). Example for a code-only arena:
 
 ```javascript
 export function generateArena(arenaNumber) {
@@ -949,11 +977,14 @@ Modifier effects automatically applied in `handleWaveIntro()`.
 
 **Configuration Files:**
 - `js/config/arenas.js` - Arena definitions, wave counts, features
+- `js/config/arenaLayouts.js` - Per-arena layout data (objects, prefabs, playerSpawn, enemySpawners)
 - `js/config/constants.js` - Wave states, threat budgets, modifiers
 - `js/config/enemies.js` - Enemy availability per arena
 
 **Implementation Files:**
 - `js/arena/generator.js` - Arena geometry generation
+- `js/arena/spawnFactory.js` - Spawn factory for layout-driven placement
+- `js/arena/placementEditor.js` - Debug placement mode and layout export
 - `js/systems/waveSystem.js` - Wave management, spawning, progression
 - `js/core/gameState.js` - Arena state tracking
 

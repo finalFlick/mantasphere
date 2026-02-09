@@ -69,7 +69,7 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 **Stats:**
 - Size: 0.65 (Standard - noticeably bigger than tiny)
 - Health: 12
-- Speed: 0.055
+- Speed: Derived from player base (0.08) with 1-3 baseline speed upgrades (0.0816-0.0849)
 - Damage: 10
 - Color: Mid Red (0xff4444)
 - XP Value: 1
@@ -108,7 +108,7 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 **Stats:**
 - Size: 0.35 (Small but visible)
 - Health: 4 (1-shot at base damage)
-- Speed: 0.07 (Fastest puffer variant)
+- Speed: 0.07 (Fixed - fastest puffer variant, not derived from player speed)
 - Damage: 5
 - Color: Pink (0xffaaaa)
 - XP Value: 0.5
@@ -146,7 +146,7 @@ SPHERESTORM uses a **weighted spawn system** with **cognitive caps** to create c
 **Stats:**
 - Size: 1.1 (Heavy - very large and intimidating)
 - Health: 30 (3-shot at base damage)
-- Speed: 0.04 (Slowest puffer variant)
+- Speed: Derived from player base (0.08) with 3-5 baseline speed upgrades (0.0849-0.0883)
 - Damage: 15
 - Color: Dark Red (0x991111)
 - XP Value: 3
@@ -905,6 +905,39 @@ Visual profiles create distinct, recognizable enemies without geometric complexi
 **Used By:** Pillar Police
 
 **Purpose:** Agility indication, paired patrol feel
+
+---
+
+## Enemy Speed System
+
+Enemy speeds are calculated relative to player base speed (0.08 units/frame) to maintain consistent relative difficulty as the player progresses.
+
+### Speed Calculation Rules
+
+- **Baby Puffers (Tiny)**: Fixed at 0.07 units/frame (not derived from player speed)
+- **Medium Enemies (Red Puffer)**: Speed = Player base (0.08) × 1.02^(1-3 baseline upgrades)
+  - Clamps to 1-3 upgrade levels
+  - Arena 1 (0 upgrades): 0.0816
+  - With 1 upgrade: 0.0816
+  - With 2 upgrades: 0.0832
+  - With 3+ upgrades: 0.0849
+- **Heavy Enemies (Big Puffer)**: Speed = Player base (0.08) × 1.02^(3-5 baseline upgrades)
+  - Clamps to 3-5 upgrade levels
+  - Arena 1 (0 upgrades): 0.0849
+  - With 3 upgrades: 0.0849
+  - With 4 upgrades: 0.0866
+  - With 5+ upgrades: 0.0883
+
+### What Counts for Enemy Speed
+
+- **Only baseline auto-scaling speed upgrades** (from `applyBaselineLevelScaling()`)
+- **Does NOT count**: Speed Module, blueprint upgrades, manual upgrade selections
+- Baseline upgrades only occur when starting at Arena 2+ directly from level select
+- During Arena 1 gameplay, `baselineSpeedUpgrades = 0`
+
+### Other Enemy Types
+
+Non-puffer enemies (shooter, splitter, teleporter, etc.) continue using fixed speeds from config.
 
 ---
 

@@ -3,84 +3,29 @@
 // Purely visual - no gameplay impact, no collision
 
 import { scene } from '../core/scene.js';
-
-// ==================== UTILITIES ====================
-
-// Pseudo-noise for organic stone texture (displaces vertices along normals)
-function wobble(v, scale, seed = 0) {
-    const t = (v.x * 12.7 + v.y * 7.3 + v.z * 9.1 + seed) * scale;
-    return Math.sin(t) * 0.5 + Math.cos(t * 0.7) * 0.5;
-}
-
-// Moss mask: returns 0-1 based on upward-facing + noise
-// Higher values = more moss (green vertex color)
-function getMossMask(normal, position, seed = 42) {
-    // Upward-facing surfaces get more moss
-    const upwardness = Math.max(0, normal.y);
-    // Add noise variation
-    const noise = wobble(position, 1.5, seed) * 0.5 + 0.5;
-    // Combine: mostly upward surfaces, with some noise variation
-    return Math.min(1, upwardness * 0.7 + noise * 0.4);
-}
-
-// Apply vertex colors for moss effect to a geometry
-function applyMossVertexColors(geometry, stoneColor, mossColor, seed = 42) {
-    const positions = geometry.attributes.position;
-    const normals = geometry.attributes.normal;
-    const colors = new Float32Array(positions.count * 3);
-    
-    const stone = new THREE.Color(stoneColor);
-    const moss = new THREE.Color(mossColor);
-    const temp = new THREE.Color();
-    const pos = new THREE.Vector3();
-    const norm = new THREE.Vector3();
-    
-    for (let i = 0; i < positions.count; i++) {
-        pos.set(positions.getX(i), positions.getY(i), positions.getZ(i));
-        norm.set(normals.getX(i), normals.getY(i), normals.getZ(i));
-        
-        const mossFactor = getMossMask(norm, pos, seed);
-        temp.copy(stone).lerp(moss, mossFactor);
-        
-        colors[i * 3] = temp.r;
-        colors[i * 3 + 1] = temp.g;
-        colors[i * 3 + 2] = temp.b;
-    }
-    
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-}
-
-// Deform geometry vertices along normals for organic rock look
-function deformGeometry(geometry, scale, seed = 0) {
-    const positions = geometry.attributes.position;
-    const normals = geometry.attributes.normal;
-    const pos = new THREE.Vector3();
-    const norm = new THREE.Vector3();
-    
-    for (let i = 0; i < positions.count; i++) {
-        pos.set(positions.getX(i), positions.getY(i), positions.getZ(i));
-        norm.set(normals.getX(i), normals.getY(i), normals.getZ(i));
-        
-        const displacement = wobble(pos, 2.2, seed) * scale;
-        pos.addScaledVector(norm, displacement);
-        
-        positions.setXYZ(i, pos.x, pos.y, pos.z);
-    }
-    
-    geometry.computeVertexNormals();
-}
+import { deformGeometry, applyMossVertexColors } from '../utils/proceduralMesh.js';
+import { Textures, applyPbr } from '../systems/textures.js';
 
 // ==================== MATERIALS (module-scoped for safe disposal) ====================
 
 let ownedMaterials = [];
 
 function createStoneMaterial() {
+    const useTexture = !!Textures.stoneSeabed?.albedo;
     const mat = new THREE.MeshStandardMaterial({
-        color: 0x555566,
-        roughness: 0.95,
-        metalness: 0.0,
-        vertexColors: true
+        color: 0xffffff,
+        roughness: 1,
+        metalness: 1,
+        // When using a texture, skip vertex colors so the stone texture is visible (not darkened to black)
+        vertexColors: !useTexture
     });
+    if (useTexture) {
+        applyPbr(mat, Textures.stoneSeabed, { repeatX: 4, repeatY: 4 });
+    } else {
+        mat.color.setHex(0x555566);
+        mat.roughness = 0.95;
+        mat.metalness = 0.0;
+    }
     ownedMaterials.push(mat);
     return mat;
 }
@@ -384,37 +329,60 @@ export function createPufferkeepCastle() {
 // ==================== LIFECYCLE ====================
 
 let castleMesh = null;
+let castlePointLight = null;
+let castleSpotLight = null;
 
 export function addPufferkeepCastle() {
     if (castleMesh) return;
-    
+
     castleMesh = createPufferkeepCastle();
-    
+
     // Position: center-back of arena
     castleMesh.position.set(0, 0, -42);
-    
+
     // Scale to fit arena backdrop
     castleMesh.scale.setScalar(3.5);
-    
+
     scene.add(castleMesh);
+
+    // Castle beacon: point light so players see where the castle is
+    castlePointLight = new THREE.PointLight(0xffaa66, 0.6, 100);
+    castlePointLight.position.set(0, 4, -40);
+    scene.add(castlePointLight);
+
+    // Spotlight from above/behind to reinforce castle as focal point
+    castleSpotLight = new THREE.SpotLight(0xffcc88, 0.4, 120, Math.PI / 8, 0.5);
+    castleSpotLight.position.set(0, 25, -60);
+    castleSpotLight.target.position.set(0, 0, -42);
+    scene.add(castleSpotLight.target);
+    scene.add(castleSpotLight);
 }
 
 export function removePufferkeepCastle() {
+    if (castlePointLight) {
+        scene.remove(castlePointLight);
+        castlePointLight = null;
+    }
+    if (castleSpotLight) {
+        scene.remove(castleSpotLight.target);
+        scene.remove(castleSpotLight);
+        castleSpotLight = null;
+    }
     if (!castleMesh) return;
-    
+
     // Dispose geometries
     castleMesh.traverse(child => {
         if (child.geometry) {
             child.geometry.dispose();
         }
     });
-    
+
     // Dispose only materials we own (tracked in module)
     ownedMaterials.forEach(mat => {
         if (mat) mat.dispose();
     });
     ownedMaterials = [];
-    
+
     scene.remove(castleMesh);
     castleMesh = null;
 }

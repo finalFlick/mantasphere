@@ -15,12 +15,12 @@ import { killBoss, checkBossRetreat } from '../entities/boss.js';
 import { spawnParticle, spawnShieldHitVFX, spawnShieldBreakVFX } from '../effects/particles.js';
 import { spawnXpGem, spawnHeart, spawnTreasureRewardOrb } from './pickups.js';
 import { takeDamage, canTakeCollisionDamage, resetDamageCooldown } from './damage.js';
-import { HEART_DROP_CHANCE, HEART_HEAL } from '../config/constants.js';
+import { HEART_DROP_CHANCE, HEART_HEAL, STOMP_DAMAGE_MULT } from '../config/constants.js';
 import { PROJECTILE_ITEMS } from '../config/items.js';
 import { triggerSlowMo, triggerScreenFlash, createExposedVFX, createTetherSnapVFX, cleanupVFX } from './visualFeedback.js';
 import { showTutorialCallout } from '../ui/hud.js';
 import { PulseMusic } from './pulseMusic.js';
-import { safeFlashMaterial } from './materialUtils.js';
+import { safeFlashMaterial, setEmissiveIntensity } from './materialUtils.js';
 
 let lastShot = 0;  // Kept for UI charge ring (visual only)
 let shotCooldownFrames = 0;  // Frame-based cooldown counter
@@ -317,7 +317,7 @@ export function updateProjectiles(delta) {
                         // Dim core as it weakens
                         if (enemy.guardianCoreMesh?.material?.emissive) {
                             const pct = enemy.anemoneCoreHP / (enemy.anemoneCoreMaxHP || enemy.anemoneCoreHP);
-                            enemy.guardianCoreMesh.material.emissiveIntensity = 0.2 + pct * 0.7;
+                            setEmissiveIntensity(enemy.guardianCoreMesh.material, 0.2 + pct * 0.7);
                         }
                         damageDealt = 0;
                     }
@@ -799,7 +799,7 @@ export function applyDashStrikeDamageToEnemy(enemy, rawDamage, hitPosition, enem
         } else {
             if (enemy.guardianCoreMesh?.material?.emissive) {
                 const pct = enemy.anemoneCoreHP / (enemy.anemoneCoreMaxHP || enemy.anemoneCoreHP);
-                enemy.guardianCoreMesh.material.emissiveIntensity = 0.2 + pct * 0.7;
+                setEmissiveIntensity(enemy.guardianCoreMesh.material, 0.2 + pct * 0.7);
             }
             damageDealt = 0;
         }
@@ -853,6 +853,16 @@ export function applyDashStrikeDamageToEnemy(enemy, rawDamage, hitPosition, enem
     }
 
     return { hit: true, killed: false, damageDealt };
+}
+
+/**
+ * Apply stomp/crush damage to an enemy (reuses Dash Strike path: shields then HP).
+ * Returns { killed: boolean, damageDealt: number }.
+ */
+export function applyStompDamageToEnemy(enemy, enemyIndex = -1) {
+    const rawDamage = gameState.stats.damage * STOMP_DAMAGE_MULT;
+    const result = applyDashStrikeDamageToEnemy(enemy, rawDamage, player.position, enemyIndex);
+    return { killed: result.killed, damageDealt: result.damageDealt };
 }
 
 /**

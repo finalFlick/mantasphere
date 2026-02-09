@@ -9,7 +9,6 @@ export const STORAGE_PREFIX = GAME_TITLE.toLowerCase().replace(/\s+/g, '') + '_'
 // These globals are injected by esbuild at build time from .env file
 // Dev build (npm run dev): ENV_DEBUG_SECRET=true
 // Prod build (npm run build): ENV_DEBUG_SECRET=false
-// Unbundled dev (index.dev.html): window.__DEV_MODE__ = true
 // See .env.example for configuration template
 
 /* global ENV_DEBUG_SECRET, ENV_PLAYTEST_URL, ENV_PLAYTEST_TOKEN, ENV_COMMIT_HASH, ENV_COMMIT_TIME_ISO, ENV_BUILD_TIME_ISO */
@@ -108,6 +107,9 @@ export const CINEMATIC_BOSS_HOLD_FRAMES = 120;  // 2 seconds at 60fps - camera h
 export const PLAYER_JUMP_VELOCITY = 0.4;
 export const PLAYER_GRAVITY = 0.018;
 export const BOUNCE_FACTORS = [0.45, 0.2, 0.08];
+export const STOMP_BOUNCE_VELOCITY = 0.3;
+export const STOMP_PUSH_SPEED = 0.22;
+export const STOMP_DAMAGE_MULT = 2;  // stomp damage = gameState.stats.damage * STOMP_DAMAGE_MULT
 export const TRAIL_MAX = 60;
 export const TRAIL_LIFETIME = 90;
 export const TRAIL_SPAWN_DISTANCE = 0.3;
@@ -237,10 +239,18 @@ export const THREAT_BUDGET = {
     // Arena-specific budget overrides (applied before arena scaling)
     arenaBudgetOverrides: {
         1: {
-            lesson: { total: 900 },      // Increased from 700
-            integration: { total: 1300 }, // Increased from 1100
-            exam: { total: 1800 }         // Increased from 1500
+            lesson: { total: 450 },      // Very easy first wave
+            integration: { total: 1300 }, // Fallback for non–Arena-1 or missing per-wave
+            exam: { total: 1800 }
         }
+    },
+    // Arena 1 per-wave integration budget: wave 1 easy, ramp so difficulty increases by wave 7
+    arena1IntegrationByWave: {
+        2: 550,   // Gentle step up from lesson (450)
+        3: 750,
+        4: 950,
+        5: 1150,
+        6: 1300   // Full integration level before exam
     },
     arenaScaling: { 1: 1.0, 2: 1.3, 3: 1.6, 4: 1.9, 5: 2.2, 6: 2.5 }  // Increased scaling to maintain pressure
 };
@@ -304,7 +314,7 @@ export const SCHOOL_CONFIG = {
     enabled: true,
     // Wave-based frequency by arena (schools ramp up across waves)
     chanceByWave: {
-        arena1: { 1: 0, 2: 0.10, 3: 0.25 },     // No schools Wave 1, rare Wave 2, more Wave 3
+        arena1: { 1: 0, 2: 0.10, 3: 0.25, 4: 0.35, 5: 0.40, 6: 0.45, 7: 0.50 },     // No schools Wave 1, ramping up on later waves
         arena2: { 1: 0.05, 2: 0.15, 3: 0.20 },
         default: { 1: 0.05, 2: 0.15, 3: 0.20 }
     },
@@ -331,7 +341,7 @@ export const SPAWN_CHOREOGRAPHY = {
     },
     // Other arenas use random by default (can be extended)
     edgeSpawnDistance: 40,   // How far from center to spawn (near arena edge)
-    edgeSpread: 25,          // Spread along the edge
+    edgeSpread: 35,          // Spread along the edge (reduces choreography clustering)
     directions: ['north', 'south', 'east', 'west']
 };
 
@@ -480,6 +490,290 @@ export const AMBIENCE_CONFIG = {
     
     // Combat safe zone (bubbles/fish avoid this area)
     safeZoneRadius: 25,                        // Center 25 units is combat area
+};
+
+// Underwater decorative and ambient assets (coral, rocks, life, effects).
+// Placement radii are derived from getArenaBounds(arenaNum) in init; these are defaults/ratios.
+// detailLevel: 'low' = 6 types, 'medium' = 12, 'high' = all 20 (reduces draw calls on low-end).
+export const UNDERWATER_ASSETS_CONFIG = {
+    enabled: true,
+    detailLevel: 'high',  // 'low' | 'medium' | 'high'
+
+    coral: {
+        enabled: true,
+        countScale: 4,
+        placementRadiusMin: 0.45,
+        placementRadiusMax: 0.7,
+        clusterTypes: ['brain', 'fan', 'tube'],
+        colors: { base: 0xcc7766, highlight: 0xeeaa99, tip: 0x448877 },
+        deformScale: 0.1,
+        swaySpeed: 0.2,
+        swayIntensity: 0.03,
+        minClusterDistance: 3.5,
+    },
+
+    anemones: {
+        enabled: true,
+        patchesMin: 2,
+        patchesMax: 6,
+        placementRadiusMin: 0.5,
+        placementRadiusMax: 0.72,
+        anemonesPerPatch: { min: 2, max: 5 },
+        tentacleCount: 11,
+        baseRadius: 0.15,
+        tentacleLength: { min: 0.15, max: 0.25 },
+        swaySpeed: 1.2,
+        swayIntensity: 0.15,
+        colorBase: 0xffddcc,
+        colorTip: 0xaa6688,
+        minPatchDistance: 6,
+    },
+
+    rocks: {
+        enabled: true,
+        countMin: 3,
+        countMax: 8,
+        placementRadiusMin: 0.35,
+        placementRadiusMax: 0.65,
+        rockCountPerFormation: { min: 2, max: 5 },
+        deformScale: { min: 0.12, max: 0.2 },
+        stoneColor: 0x555566,
+        mossColor: 0x3b5b3b,
+    },
+
+    seaweedBeds: {
+        enabled: true,
+        bedCountMin: 4,
+        bedCountMax: 8,
+        bladesPerBed: 15,
+        bladeHeight: { min: 0.2, max: 0.5 },
+        placementRadiusMin: 0.42,
+        placementRadiusMax: 0.68,
+        swaySpeed: 1.5,
+        swayIntensity: 0.2,
+        colorBase: 0x1a3d2a,
+        colorTip: 0x2a5a3a,
+    },
+
+    scatter: {
+        enabled: true,
+        shellCount: 50,
+        urchinCount: 25,
+        starfishCount: 15,
+        placementRadiusMin: 0.4,
+        placementRadiusMax: 0.78,
+        scale: { min: 0.8, max: 1.2 },
+    },
+
+    ruins: {
+        enabled: true,
+        ruinCount: { min: 2, max: 4 },
+        pillarHeight: { min: 0.8, max: 2.5 },
+        wallSegmentChance: 0.5,
+        placementRadiusMin: 0.5,
+        placementRadiusMax: 0.72,
+        stoneColor: 0x555566,
+        mossColor: 0x3b5b3b,
+    },
+
+    vents: {
+        enabled: true,
+        maxCount: 2,
+        minBoundForVent: 80,
+        placementRadiusMin: 0.55,
+        placementRadiusMax: 0.75,
+        lightColor: 0xff8844,
+        lightIntensity: { min: 0.4, max: 0.6 },
+        lightDistance: 35,
+        particleCount: 30,
+        riseSpeed: 0.08,
+        flickerSpeed: 3,
+    },
+
+    shipwreck: {
+        enabled: true,
+        minBound: 100,
+        placementRadius: 0.6,
+        hullScale: 1,
+        mastAngle: Math.PI / 6,
+        rustColor: 0x663322,
+        mossColor: 0x2a4a2a,
+    },
+
+    cave: {
+        enabled: true,
+        arenaList: [1],
+        width: 8,
+        height: 3,
+        depth: 1.5,
+        placementAngle: Math.PI / 2,
+        backPlaneGradient: [0x050510, 0x101830],
+    },
+
+    grotto: {
+        enabled: true,
+        minBound: 80,
+        placementRadiusMin: 0.65,
+        placementRadiusMax: 0.8,
+        nodeCount: 5,
+        nodeRadius: 0.14,
+        lightColor: 0x44ffaa,
+        lightIntensityBase: 0.5,
+        pulseSpeed: 1.5,
+        pulseMin: 0.7,
+        pulseMax: 1,
+    },
+
+    jellyfish: {
+        enabled: true,
+        maxCount: 10,
+        placementRadiusMin: 0.5,
+        placementRadiusMax: 0.7,
+        heightMin: 4,
+        heightMax: 14,
+        bellRadius: 0.35,
+        tentacleCount: 6,
+        driftSpeed: 0.015,
+        bobSpeed: 0.8,
+        tentacleSwaySpeed: 2,
+        color: 0xffdddd,
+        opacity: 0.55,
+    },
+
+    mantas: {
+        enabled: true,
+        count: 2,
+        pathRadiusMin: 1.05,
+        pathRadiusMax: 1.15,
+        heightMin: 6,
+        heightMax: 12,
+        size: 1,
+        color: 0x334455,
+        opacity: 0.35,
+        orbitSpeed: 0.015,
+        bankIntensity: 0.1,
+    },
+
+    minnows: {
+        enabled: true,
+        instanceCount: 100,
+        placementRadiusMin: 0.6,
+        placementRadiusMax: 0.85,
+        heightMin: 3,
+        heightMax: 8,
+        schoolRadius: 1.5,
+        orbitSpeed: 0.02,
+        color: 0x6688aa,
+        opacity: 0.6,
+    },
+
+    crabs: {
+        enabled: true,
+        countMin: 3,
+        countMax: 8,
+        placementRadiusMin: 0.55,
+        placementRadiusMax: 0.82,
+        stepDistance: 0.08,
+        stepDuration: 0.3,
+        clawSwaySpeed: 3,
+        minCrabDistance: 3,
+    },
+
+    plankton: {
+        enabled: true,
+        count: 200,
+        driftSpeedXZ: 0.008,
+        driftSpeedY: 0.003,
+        size: 0.08,
+        color: 0xaaccdd,
+        opacityBase: 0.15,
+        twinkleSpeed: 0.5,
+    },
+
+    lightShafts: {
+        enabled: true,
+        count: 4,
+        originY: 22,
+        length: 25,
+        radiusTop: 8,
+        opacity: 0.06,
+        color: 0xffffff,
+        minBound: 100,
+    },
+
+    caustics: {
+        enabled: true,
+        tilingX: 4,
+        tilingY: 4,
+        speedX: 0.02,
+        speedY: 0.01,
+        opacity: 0.2,
+    },
+
+    fog: {
+        enabled: true,
+        color: 0x0a1520,
+        density: 0.012,
+    },
+
+    currentRibbons: {
+        enabled: true,
+        count: 4,
+        length: 8,
+        width: 0.3,
+        placementRadiusMin: 0.45,
+        placementRadiusMax: 0.7,
+        waveSpeed: 1.5,
+        waveAmplitude: 0.15,
+        color: 0x4488aa,
+        opacity: 0.25,
+    },
+
+    treasure: {
+        enabled: true,
+        coinCount: 25,
+        chestCount: 1,
+        bonePileCount: 3,
+        bonesPerPile: 3,
+        placementRadiusMin: 0.5,
+        placementRadiusMax: 0.72,
+        goldColor: 0xccaa44,
+        chestColor: 0x553322,
+        boneColor: 0xddccbb,
+    },
+
+    // Distant underwater city skyline (Arena 1): pods, domes, pylons, instanced warm windows
+    underwaterCity: {
+        enabled: true,
+        arenaList: [1],
+        minBound: 100,
+        podCount: 6,
+        placementRadiusMin: 0.65,
+        placementRadiusMax: 0.92,
+        maxPointLights: 4,
+        windowCount: 48,
+        podColor: 0x1a3545,
+        windowColor: 0xffcc66,
+        pulseSpeed: 0.8,
+        pulseMin: 0.85,
+        pulseMax: 1,
+    },
+
+    // Bioluminescent flowers (Arena 1 outer ring / city plazas)
+    bioFlowers: {
+        enabled: true,
+        arenaList: [1],
+        minBound: 80,
+        bedCountMin: 4,
+        bedCountMax: 10,
+        placementRadiusMin: 0.5,
+        placementRadiusMax: 0.78,
+        stemsPerBed: 8,
+        petalColors: [0xff8844, 0xffaa66, 0xaacc66, 0xcc88ff],
+        emissiveIntensity: { min: 0.4, max: 0.8 },
+        swaySpeed: 1.2,
+        swayIntensity: 0.12,
+    },
 };
 
 // Treasure Runner configuration

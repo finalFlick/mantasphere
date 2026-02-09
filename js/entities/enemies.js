@@ -11,11 +11,12 @@ import { takeDamage, canTakeCollisionDamage, resetDamageCooldown, tickDamageCool
 import { createShieldBubble, updateShieldVisual, createRushTelegraph, updateRushTelegraph, cleanupVFX, triggerSlowMo } from '../systems/visualFeedback.js';
 import { showTutorialCallout } from '../ui/hud.js';
 import { PulseMusic } from '../systems/pulseMusic.js';
-import { ARENA_CONFIG } from '../config/arenas.js';
+import { ARENA_CONFIG, getArenaBounds, getBowlSurfaceYAt } from '../config/arenas.js';
 import { spawnEnemyProjectileFromPool } from '../systems/projectiles.js';
 import { markEnemyEncountered } from '../ui/rosterUI.js';
 import { log, logOnce, logThrottled } from '../systems/debugLog.js';
 import { TUNING } from '../config/tuning.js';
+import { setEmissiveIntensity } from '../systems/materialUtils.js';
 
 // Cache pillar positions for pillar hopper behavior
 let cachedPillarTops = [];
@@ -39,6 +40,14 @@ function getCachedRingGeometry(innerRadius, outerRadius, segments = 32) {
     return geometryCache.get(key);
 }
 
+function darkenRgb(hex, factor = 0.55) {
+    const f = Math.max(0, Math.min(1, Number(factor)));
+    const r = Math.max(0, Math.min(255, Math.round(((hex >> 16) & 0xFF) * f)));
+    const g = Math.max(0, Math.min(255, Math.round(((hex >> 8) & 0xFF) * f)));
+    const b = Math.max(0, Math.min(255, Math.round((hex & 0xFF) * f)));
+    return (r << 16) | (g << 8) | b;
+}
+
 // Clear geometry cache (call on game reset to prevent unbounded memory growth)
 export function clearEnemyGeometryCache() {
     for (const geometry of geometryCache.values()) {
@@ -57,6 +66,19 @@ export function clearEnemyGeometryCache() {
 function getEnemySpeedTuningMultiplier() {
     const multRaw = Number(TUNING.enemySpeedMultiplier || 1.0);
     return Math.max(0.25, Math.min(3.0, multRaw || 1.0));
+}
+
+// Minimum distance from existing enemies when spawning (reduces clustering)
+const MIN_SPAWN_DIST_FROM_ENEMY = 4;
+
+function isTooCloseToAnyEnemy(x, z, minDist) {
+    for (const e of enemies) {
+        if (!e.health || e.health <= 0) continue;
+        const dx = x - e.position.x;
+        const dz = z - e.position.z;
+        if (Math.sqrt(dx * dx + dz * dz) < minDist) return true;
+    }
+    return false;
 }
 
 // Check if a position is valid for enemy placement (not in hazards or obstacles)
@@ -122,11 +144,12 @@ function getCachedConeGeometry(radius, height, segments = 6) {
 // Create mini porcupinefish mesh for Red Puffer enemies (simplified version of Boss 1)
 function createMiniPorcupinefishMesh(size, color) {
     const group = new THREE.Group();
+    const base = darkenRgb(color, 0.55);
     
     // Main body - sphere (body radius = size)
     const bodyGeom = getCachedSphereGeometry(size, 12);
     const bodyMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: base,
         emissive: color,
         emissiveIntensity: 0.4
     });
@@ -170,7 +193,7 @@ function createMiniPorcupinefishMesh(size, color) {
     // Tail fin - positioned clearly behind body
     const tailGeom = getCachedConeGeometry(size * 0.3, size * 0.5, 4);
     const tailMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: base,
         emissive: color,
         emissiveIntensity: 0.3
     });
@@ -182,7 +205,7 @@ function createMiniPorcupinefishMesh(size, color) {
     // Side fins - positioned outside body surface
     const finGeom = getCachedConeGeometry(size * 0.2, size * 0.4, 3);
     const finMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.3,
         side: THREE.DoubleSide
@@ -203,7 +226,7 @@ function createMiniPorcupinefishMesh(size, color) {
     // Single dorsal fin on top - positioned above body
     const dorsalGeom = getCachedConeGeometry(size * 0.15, size * 0.35, 3);
     const dorsalMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.4
     });
@@ -230,7 +253,7 @@ function createGuardianCrabMesh(typeData) {
     const group = new THREE.Group();
 
     const bodyMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.45
     });
@@ -282,7 +305,7 @@ function createGuardianCrabMesh(typeData) {
     // Claws - flattened spheres in front-left/right
     const clawGeom = getCachedSphereGeometry(size * 0.45, 10);
     const clawMat = new THREE.MeshStandardMaterial({
-        color: color,
+        color: darkenRgb(color, 0.75),
         emissive: color,
         emissiveIntensity: 0.35
     });
@@ -399,14 +422,15 @@ function buildEnemyMesh(typeData) {
     if (profile?.type === 'orbiter') {
         const group = new THREE.Group();
         const sphereSize = typeData.size * 0.55;
+        const base = darkenRgb(typeData.color, 0.55);
         
         const orbitMat1 = new THREE.MeshStandardMaterial({
-            color: typeData.color,
+            color: base,
             emissive: typeData.color,
             emissiveIntensity: profile.glowIntensity || 0.8
         });
         const orbitMat2 = new THREE.MeshStandardMaterial({
-            color: typeData.color,
+            color: base,
             emissive: typeData.color,
             emissiveIntensity: profile.glowIntensity || 0.8
         });
@@ -439,8 +463,9 @@ function buildEnemyMesh(typeData) {
     
     // Create simple smooth sphere (the enemy is just a Mesh, not a Group)
     const geometry = getCachedSphereGeometry(typeData.size, 16);
+    const base = darkenRgb(typeData.color, 0.55);
     const material = new THREE.MeshStandardMaterial({
-        color: typeData.color,
+        color: base,
         emissive: typeData.color,
         emissiveIntensity: profile?.glowIntensity || 0.3,
         transparent: isTransparent,
@@ -662,24 +687,45 @@ function isInSameCorridor(x1, z1, x2, z2) {
     return inWestCorridor || inEastCorridor || inNorthCorridor || inSouthCorridor;
 }
 
-// Get choreographed spawn position based on direction
-function getChoreographedSpawnPosition(direction) {
-    const edgeDist = SPAWN_CHOREOGRAPHY.edgeSpawnDistance;
+// Get choreographed spawn position based on direction (player-relative)
+function getChoreographedSpawnPosition(direction, playerPos) {
+    // Spawn at 50-80 units from player in the chosen direction
+    const distance = 50 + Math.random() * 30;
     const spread = SPAWN_CHOREOGRAPHY.edgeSpread;
-    const randomOffset = (Math.random() - 0.5) * spread * 2;
+    const lateralOffset = (Math.random() - 0.5) * spread * 2;
+    
+    // Direction vectors (cardinal directions)
+    let dirX = 0;
+    let dirZ = 0;
+    let perpX = 0;
+    let perpZ = 0;
     
     switch (direction) {
         case 'north':
-            return { x: randomOffset, z: -edgeDist };
+            dirX = 0; dirZ = -1;  // North is negative Z
+            perpX = 1; perpZ = 0;  // Perpendicular is East/West
+            break;
         case 'south':
-            return { x: randomOffset, z: edgeDist };
+            dirX = 0; dirZ = 1;   // South is positive Z
+            perpX = 1; perpZ = 0;
+            break;
         case 'east':
-            return { x: edgeDist, z: randomOffset };
+            dirX = 1; dirZ = 0;   // East is positive X
+            perpX = 0; perpZ = 1;  // Perpendicular is North/South
+            break;
         case 'west':
-            return { x: -edgeDist, z: randomOffset };
+            dirX = -1; dirZ = 0;  // West is negative X
+            perpX = 0; perpZ = 1;
+            break;
         default:
             return null;
     }
+    
+    // Calculate spawn position: playerPos + direction * distance + perpendicular * lateralOffset
+    return {
+        x: playerPos.x + dirX * distance + perpX * lateralOffset,
+        z: playerPos.z + dirZ * distance + perpZ * lateralOffset
+    };
 }
 
 // Get spawn position with arena-specific rules
@@ -687,6 +733,7 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     const arena = gameState.currentArena;
     const arenaData = ARENA_CONFIG.arenas[Math.min(arena, 6)];
     const spawnConfig = arenaData?.spawnConfig;
+    const arenaBound = getArenaBounds(arena);
     
     // Check for spawn choreography (lane flood, pincer, etc.)
     const choreography = gameState.waveChoreography;
@@ -697,12 +744,12 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
         if (choreography.type === 'lane') {
             // All enemies from one direction
             chosenDirection = choreography.primaryDirection;
-            pos = getChoreographedSpawnPosition(chosenDirection);
+            pos = getChoreographedSpawnPosition(chosenDirection, playerPos);
         } else if (choreography.type === 'pincer') {
             // Alternate between two opposite directions
             const useSecondary = Math.random() < 0.5;
             chosenDirection = useSecondary ? choreography.secondaryDirection : choreography.primaryDirection;
-            pos = getChoreographedSpawnPosition(chosenDirection);
+            pos = getChoreographedSpawnPosition(chosenDirection, playerPos);
         } else if (choreography.type === 'flank') {
             // Majority from one direction, some from perpendiculars
             const flankDirs = choreography.flankDirections || [];
@@ -712,39 +759,144 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
                 if (r > 0.75) chosenDirection = flankDirs[0];
                 else if (r > 0.5) chosenDirection = flankDirs[1];
             }
-            pos = getChoreographedSpawnPosition(chosenDirection);
+            pos = getChoreographedSpawnPosition(chosenDirection, playerPos);
         } else if (choreography.type === 'burst') {
             // Any direction (high-pressure). Randomize per-spawn.
             const dirs = SPAWN_CHOREOGRAPHY.directions;
             chosenDirection = dirs[Math.floor(Math.random() * dirs.length)];
-            pos = getChoreographedSpawnPosition(chosenDirection);
+            pos = getChoreographedSpawnPosition(chosenDirection, playerPos);
         }
         
         if (pos) {
-            // Clamp to arena bounds
-            return {
-                x: Math.max(-42, Math.min(42, pos.x)),
-                z: Math.max(-42, Math.min(42, pos.z))
-            };
+            let rx = Math.max(-arenaBound, Math.min(arenaBound, pos.x));
+            let rz = Math.max(-arenaBound, Math.min(arenaBound, pos.z));
+            for (let j = 0; j < 5; j++) {
+                if (!isTooCloseToAnyEnemy(rx, rz, MIN_SPAWN_DIST_FROM_ENEMY)) break;
+                rx += (Math.random() - 0.5) * 6;
+                rz += (Math.random() - 0.5) * 6;
+                rx = Math.max(-arenaBound, Math.min(arenaBound, rx));
+                rz = Math.max(-arenaBound, Math.min(arenaBound, rz));
+            }
+            return { x: rx, z: rz };
         }
     }
     
-    // Default spawn: random distance and angle with forward arc bias
-    let distance = 28 + Math.random() * 12;
+    // ==================== ANTI-KITE SYSTEM ====================
+    // Calculate player movement direction (normalized)
+    const movementDir = new THREE.Vector3();
+    const movementSpeed = playerVelocity ? 
+        Math.sqrt(playerVelocity.x * playerVelocity.x + playerVelocity.z * playerVelocity.z) : 0;
+    
+    if (movementSpeed > 0.01) {
+        movementDir.set(playerVelocity.x, 0, playerVelocity.z).normalize();
+    } else {
+        // Fallback to camera facing if no velocity
+        movementDir.set(-Math.sin(cameraAngleX), 0, -Math.cos(cameraAngleX));
+    }
+    
+    // Track retreat duration (backward movement relative to camera facing)
+    const cameraDir = new THREE.Vector3(-Math.sin(cameraAngleX), 0, -Math.cos(cameraAngleX));
+    if (movementSpeed > 0.02) {
+        const moveDir = new THREE.Vector3(playerVelocity.x, 0, playerVelocity.z).normalize();
+        const dot = moveDir.dot(cameraDir);
+        
+        if (dot < -0.5) {
+            // Moving backward relative to facing
+            gameState.retreatTimer = (gameState.retreatTimer || 0) + 1;
+        } else {
+            // Moving forward or sideways - decay retreat timer
+            gameState.retreatTimer = Math.max(0, (gameState.retreatTimer || 0) - 2);
+        }
+    } else {
+        // Stationary - slow decay
+        gameState.retreatTimer = Math.max(0, (gameState.retreatTimer || 0) - 1);
+    }
+    
+    // Backfill pressure: Hunter pack spawn behind player after 5 seconds of retreat
+    if (gameState.retreatTimer > 300) {
+        gameState.retreatTimer = 0;
+        const behindAngle = Math.atan2(-movementDir.z, -movementDir.x) + (Math.random() - 0.5) * Math.PI * 0.6;
+        const behindDistance = 40 + Math.random() * 20;
+        let hx = playerPos.x + Math.cos(behindAngle) * behindDistance;
+        let hz = playerPos.z + Math.sin(behindAngle) * behindDistance;
+        hx = Math.max(-arenaBound, Math.min(arenaBound, hx));
+        hz = Math.max(-arenaBound, Math.min(arenaBound, hz));
+        for (let j = 0; j < 5; j++) {
+            if (!isTooCloseToAnyEnemy(hx, hz, MIN_SPAWN_DIST_FROM_ENEMY)) break;
+            hx += (Math.random() - 0.5) * 6;
+            hz += (Math.random() - 0.5) * 6;
+            hx = Math.max(-arenaBound, Math.min(arenaBound, hx));
+            hz = Math.max(-arenaBound, Math.min(arenaBound, hz));
+        }
+        return { x: hx, z: hz };
+    }
+    
+    // Default spawn: random distance and angle
+    let distance = 50 + Math.random() * 30;  // Changed from 28+12 to 50+30
     let angle = Math.random() * Math.PI * 2;
     
-    // Apply forward arc bias (prefer spawning in front of player)
-    // Use camera angle to determine player facing direction
+    const distFromCenter = Math.sqrt(playerPos.x * playerPos.x + playerPos.z * playerPos.z);
+    
+    // Arena 1: Outer Reef spawn ring + soft leash
+    let softLeashActive = false;
+    if (arena === 1) {
+        const softRadius = 60;
+        // Player in center: prefer spawns in outer ring (r 55-90) so pressure is from the reef
+        if (distFromCenter < 35) {
+            distance = 55 + Math.random() * 35;
+            angle = Math.random() * Math.PI * 2;
+        } else if (distFromCenter > softRadius) {
+            softLeashActive = true;
+            const pressureMult = 1 + (distFromCenter - softRadius) / 40;
+            distance = Math.max(30, distance / pressureMult);
+            if (Math.random() < 0.4) {
+                const aheadAngle = Math.atan2(-movementDir.z, -movementDir.x);
+                angle = aheadAngle + (Math.random() - 0.5) * Math.PI * 0.8;
+            }
+        }
+        // Player in outer ring (r > 55): bias spawn ahead and slightly inward so center remains escape
+        if (distFromCenter >= 55 && distFromCenter <= softRadius + 20) {
+            if (Math.random() < 0.5) {
+                const aheadAngle = Math.atan2(-movementDir.z, -movementDir.x);
+                const toCenterAngle = Math.atan2(-playerPos.z, -playerPos.x);
+                angle = aheadAngle * 0.7 + toCenterAngle * 0.3 + (Math.random() - 0.5) * Math.PI * 0.5;
+            }
+        }
+    }
+    
+    // Movement-direction-based spawn weighting (replaces static 20/80 bias)
+    // Calculate spawn direction vector
+    const spawnDirX = Math.cos(angle);
+    const spawnDirZ = Math.sin(angle);
+    const dot = spawnDirX * movementDir.x + spawnDirZ * movementDir.z;
+    
+    // Apply weights: forward +60%, behind -50%. Arena 1 anti-backpedal: stronger when heading stable >10s
+    const headingStable = (gameState.arena1HeadingStableFrames || 0) > 600;
+    let spawnWeight = 1.0;
+    if (dot > 0.3) {
+        spawnWeight = headingStable && arena === 1 ? 2.0 : 1.6;
+    } else if (dot < -0.5) {
+        spawnWeight = headingStable && arena === 1 ? 0.25 : 0.5;
+    }
+    
+    // Probabilistic rejection (not hard cutoff)
+    if (Math.random() > spawnWeight / 2.0) {
+        // Re-roll angle with slight bias toward forward
+        angle = Math.random() * Math.PI * 2;
+        // Recalculate dot for new angle
+        const newSpawnDirX = Math.cos(angle);
+        const newSpawnDirZ = Math.sin(angle);
+        const newDot = newSpawnDirX * movementDir.x + newSpawnDirZ * movementDir.z;
+        // Apply weight check again
+        if (newDot < -0.5 && Math.random() < 0.3) {
+            // Still behind after re-roll - allow but less likely
+            angle = Math.random() * Math.PI * 2;
+        }
+    }
+    
+    // Legacy forward arc calculation (for rear spawn distance check)
     const forwardX = -Math.sin(cameraAngleX);
     const forwardZ = -Math.cos(cameraAngleX);
-    
-    // 70% chance to spawn in forward 180° arc, 30% chance anywhere
-    if (Math.random() < 0.7) {
-        angle = getForward180SpawnAngle(playerVelocity);
-    } else {
-        // 30% chance for rear spawns - but will get increased distance below
-        angle = Math.random() * Math.PI * 2;
-    }
     
     // Apply anti-edge bias for Arena 1 (and any arena with this config)
     if (spawnConfig?.antiEdgeBias) {
@@ -775,8 +927,8 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     // Check if spawn is in rear 180° arc - increase distance for rear spawns
     const dx = Math.cos(angle);
     const dz = Math.sin(angle);
-    const dot = dx * forwardX + dz * forwardZ;
-    const isRearSpawn = dot < 0;  // Negative dot = behind player
+    const forwardDot = dx * forwardX + dz * forwardZ;
+    const isRearSpawn = forwardDot < 0;  // Negative dot = behind player
     
     if (isRearSpawn) {
         // Rear spawns: minimum 12 units (vs 8 for forward)
@@ -796,16 +948,16 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
             angle = Math.random() * Math.PI * 2;
             x = playerPos.x + Math.cos(angle) * distance;
             z = playerPos.z + Math.sin(angle) * distance;
-            x = Math.max(-42, Math.min(42, x));
-            z = Math.max(-42, Math.min(42, z));
+            x = Math.max(-arenaBound, Math.min(arenaBound, x));
+            z = Math.max(-arenaBound, Math.min(arenaBound, z));
             attempts++;
         }
     }
     
-    // Enforce corner distance if configured
-    if (spawnConfig?.minDistFromCorner) {
+    // Enforce corner distance if configured (only for arenas with standard bounds)
+    if (spawnConfig?.minDistFromCorner && arenaBound <= 50) {
         const minDist = spawnConfig.minDistFromCorner;
-        const corners = [[-42, -42], [42, -42], [-42, 42], [42, 42]];
+        const corners = [[-arenaBound, -arenaBound], [arenaBound, -arenaBound], [-arenaBound, arenaBound], [arenaBound, arenaBound]];
         
         for (const [cx, cz] of corners) {
             const dx = x - cx;
@@ -822,8 +974,8 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     }
     
     // Clamp to arena bounds
-    x = Math.max(-42, Math.min(42, x));
-    z = Math.max(-42, Math.min(42, z));
+    x = Math.max(-arenaBound, Math.min(arenaBound, x));
+    z = Math.max(-arenaBound, Math.min(arenaBound, z));
     
     // Universal post-clamp validation: min distance from player + obstacle/hazard check
     // Use different minimums for forward vs rear spawns
@@ -845,7 +997,7 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
         const distToPlayer = Math.sqrt(dx * dx + dz * dz);
         const positionClear = isValidEnemyPosition(x, z, 0.5);
         
-        if (distToPlayer >= MIN_SPAWN_DIST && positionClear) {
+        if (distToPlayer >= MIN_SPAWN_DIST && positionClear && !isTooCloseToAnyEnemy(x, z, MIN_SPAWN_DIST_FROM_ENEMY)) {
             spawnValid = true;
         } else {
             // Retry with a new random angle, biased toward center if near edge
@@ -869,6 +1021,27 @@ function getArenaSpawnPosition(playerPos, playerVelocity) {
     }
     
     return { x, z };
+}
+
+/**
+ * Calculate enemy speed relative to player base speed and baseline upgrades.
+ * Only baseline auto-scaling speed upgrades count (modules/blueprints ignored).
+ * 
+ * @param {string} enemyTypeName - Enemy type identifier ('gruntTiny', 'grunt', 'gruntBig', etc.)
+ * @returns {number|null} Calculated enemy speed, or null to use config speed
+ */
+function calculateRelativeEnemySpeed(enemyTypeName) {
+    // Puffer speeds kept below player base (0.08) so player can kite and get away
+    if (enemyTypeName === 'gruntTiny') {
+        return 0.055;  // Slower than player - can create distance
+    } else if (enemyTypeName === 'grunt') {
+        return 0.065;  // Still slower than player (Wave 2 enemy with dash)
+    } else if (enemyTypeName === 'gruntBig') {
+        return 0.075;  // Slightly below player so they can escape (Wave 3)
+    }
+
+    // Fallback: return null to use config speed for other enemy types
+    return null;
 }
 
 // Helper: Create and configure a single enemy at a specific position
@@ -906,8 +1079,16 @@ function spawnEnemyAtPosition(enemyType, x, z) {
     // Enemy HP: base * modifier * difficulty only (no arena/wave scaling)
     enemy.health = Math.floor(typeData.health * healthMult * diffConfig.hpMult);
     enemy.maxHealth = enemy.health;
-    // Optional: 10% speed reduction for better pacing (less frantic feel)
-    enemy.speed = typeData.speed * (1 + gameState.currentArena * 0.02) * 0.9;
+    
+    // Calculate relative speed for puffer enemies (baby/medium/heavy)
+    const relativeSpeed = calculateRelativeEnemySpeed(enemyType.name);
+    if (relativeSpeed !== null) {
+        // Use calculated relative speed, then apply arena scaling and pacing reduction
+        enemy.speed = relativeSpeed * (1 + gameState.currentArena * 0.02) * 0.9;
+    } else {
+        // Fallback: use config speed for other enemy types (shooter, splitter, etc.)
+        enemy.speed = typeData.speed * (1 + gameState.currentArena * 0.02) * 0.9;
+    }
     // Enemy damage: gentle arena scaling + difficulty
     enemy.damage = Math.floor(typeData.damage * arenaDmgScale * diffConfig.dpsMult);
     enemy.size = typeData.size;
@@ -985,7 +1166,7 @@ function spawnEnemyAtPosition(enemyType, x, z) {
         const mat = enemy.baseMaterial || enemy.material;
         if (mat && mat.emissive) {
             mat.emissive.setHex(0xffdd44);
-            mat.emissiveIntensity = 0.9;
+            setEmissiveIntensity(mat, 0.9);
         }
     }
     
@@ -1094,6 +1275,7 @@ export function spawnSchool(centerX, centerZ, enemyType, schoolSize) {
     const spawned = [];
     const schoolId = nextSchoolId++;
     const spacing = SCHOOL_CONFIG.formationSpacing;
+    const arenaBound = getArenaBounds(gameState.currentArena);
     
     log('SPAWN', 'school', {
         schoolId,
@@ -1125,8 +1307,8 @@ export function spawnSchool(centerX, centerZ, enemyType, schoolSize) {
         let z = centerZ + offsetZ;
         
         // Clamp to arena bounds
-        x = Math.max(-42, Math.min(42, x));
-        z = Math.max(-42, Math.min(42, z));
+        x = Math.max(-arenaBound, Math.min(arenaBound, x));
+        z = Math.max(-arenaBound, Math.min(arenaBound, z));
         
         // Validate follower position (not inside obstacle/hazard and not too close to player)
         const MIN_SPAWN_DIST = 8;  // Minimum distance from player (units)
@@ -1140,8 +1322,8 @@ export function spawnSchool(centerX, centerZ, enemyType, schoolSize) {
             const adjustAngle = angle + (Math.random() - 0.5) * Math.PI * 0.5;
             x = centerX + Math.cos(adjustAngle) * dist;
             z = centerZ + Math.sin(adjustAngle) * dist;
-            x = Math.max(-42, Math.min(42, x));
-            z = Math.max(-42, Math.min(42, z));
+            x = Math.max(-arenaBound, Math.min(arenaBound, x));
+            z = Math.max(-arenaBound, Math.min(arenaBound, z));
             
             // Re-check distance after adjustment
             const newDx = x - player.position.x;
@@ -1300,10 +1482,11 @@ export function spawnWaveEnemy() {
             if (!immediateCollision && !tooClose && isValidEnemyPosition(x, z, 0.5)) {
                 validSpawn = true;
             } else {
+                const arenaBound = getArenaBounds(gameState.currentArena);
                 const angle = Math.random() * Math.PI * 2;
                 const dist = 28 + Math.random() * 12;
-                x = Math.max(-42, Math.min(42, player.position.x + Math.cos(angle) * dist));
-                z = Math.max(-42, Math.min(42, player.position.z + Math.sin(angle) * dist));
+                x = Math.max(-arenaBound, Math.min(arenaBound, player.position.x + Math.cos(angle) * dist));
+                z = Math.max(-arenaBound, Math.min(arenaBound, player.position.z + Math.sin(angle) * dist));
                 spawnAttempts++;
             }
         }
@@ -1429,7 +1612,7 @@ export function spawnSplitEnemy(position, parentSize, index = 0, totalCount = 3)
     
     // Splitlings are simple smooth spheres with bright glow
     const material = new THREE.MeshStandardMaterial({
-        color: 0xff66ff,
+        color: darkenRgb(0xff66ff, 0.75),
         emissive: 0xff44ff,
         emissiveIntensity: 0.5
     });
@@ -1488,8 +1671,9 @@ export function spawnSplitEnemy(position, parentSize, index = 0, totalCount = 3)
     }
     
     // Clamp to arena bounds
-    spawnX = Math.max(-42, Math.min(42, spawnX));
-    spawnZ = Math.max(-42, Math.min(42, spawnZ));
+    const arenaBound = getArenaBounds(gameState.currentArena);
+    spawnX = Math.max(-arenaBound, Math.min(arenaBound, spawnX));
+    spawnZ = Math.max(-arenaBound, Math.min(arenaBound, spawnZ));
     
     enemy.position.set(spawnX, size, spawnZ);
     
@@ -1525,10 +1709,11 @@ export function spawnSpecificEnemy(typeName, nearPosition) {
     const typeData = ENEMY_TYPES[typeName];
     if (!typeData) return;
     
+    const arenaBound = getArenaBounds(gameState.currentArena);
     const angle = Math.random() * Math.PI * 2;
     const dist = 3 + Math.random() * 5;
-    const x = Math.max(-42, Math.min(42, nearPosition.x + Math.cos(angle) * dist));
-    const z = Math.max(-42, Math.min(42, nearPosition.z + Math.sin(angle) * dist));
+    const x = Math.max(-arenaBound, Math.min(arenaBound, nearPosition.x + Math.cos(angle) * dist));
+    const z = Math.max(-arenaBound, Math.min(arenaBound, nearPosition.z + Math.sin(angle) * dist));
     
     // Build enemy with visual profile
     const enemy = buildEnemyMesh(typeData);
@@ -1812,7 +1997,7 @@ export function updateEnemies(delta) {
                 
                 // Visual feedback - increase emissive glow
                 if (enemy.baseMaterial) {
-                    enemy.baseMaterial.emissiveIntensity = 0.8;
+                    setEmissiveIntensity(enemy.baseMaterial, 0.8);
                     enemy.baseMaterial.emissive.setHex(0xff4444);  // Red tint when enraged
                 }
             }
@@ -1830,6 +2015,8 @@ export function updateEnemies(delta) {
         
         // Ground collision
         let groundY = enemy.baseSize * enemy.scale.x;
+        const bowlSurfaceY = getBowlSurfaceYAt(gameState.currentArena, enemy.position.x, enemy.position.z);
+        if (bowlSurfaceY !== null) groundY = Math.min(groundY, bowlSurfaceY + groundY);
         if (gameState.unlockedEnemyBehaviors.jumping) {
             for (const obs of obstacles) {
                 const c = obs.collisionData;
@@ -1859,19 +2046,26 @@ export function updateEnemies(delta) {
         }
         
         // Player collision (using frame-based damage cooldown)
-        // Check aggro delay: newly spawned enemies can't deal damage during grace period
-        const canDealDamage = !enemy.aggroTimer || enemy.aggroTimer >= enemy.aggroDelay;
+        // Skip contact damage and push if player stomped this enemy from above this frame
         const scaledSize = enemy.baseSize * enemy.scale.x;
         if (enemy.position.distanceTo(player.position) < scaledSize + 0.5) {
-            if (canTakeCollisionDamage() && canDealDamage) {
-                const typeName = ENEMY_TYPES[enemy.enemyType]?.name || enemy.enemyType || 'Enemy';
-                takeDamage(enemy.damage, typeName, 'enemy');
-                resetDamageCooldown();
-                PulseMusic.onEnemyAttack(enemy);
+            if (!enemy.stompedThisFrame) {
+                const canDealDamage = !enemy.aggroTimer || enemy.aggroTimer >= enemy.aggroDelay;
+                if (canTakeCollisionDamage() && canDealDamage) {
+                    const typeName = ENEMY_TYPES[enemy.enemyType]?.name || enemy.enemyType || 'Enemy';
+                    takeDamage(enemy.damage, typeName, 'enemy');
+                    resetDamageCooldown();
+                    PulseMusic.onEnemyAttack(enemy);
+                }
+                tempVec3.subVectors(enemy.position, player.position).normalize();
+                enemy.position.add(tempVec3.multiplyScalar(0.5));
             }
-            tempVec3.subVectors(enemy.position, player.position).normalize();
-            enemy.position.add(tempVec3.multiplyScalar(0.5));
         }
+    }
+    
+    // Clear stomp flags after processing (set by player when stomping from above this frame)
+    for (let i = 0; i < enemies.length; i++) {
+        if (enemies[i]) enemies[i].stompedThisFrame = false;
     }
 }
 
@@ -1939,7 +2133,7 @@ function applyMovementSignature(enemy) {
             // Pulse effect for splitter
             if (profile?.type === 'pulse' && enemy.baseMaterial) {
                 const pulseIntensity = profile.glowIntensity + Math.sin(t * profile.pulseSpeed) * profile.pulseRange;
-                enemy.baseMaterial.emissiveIntensity = pulseIntensity;
+                setEmissiveIntensity(enemy.baseMaterial, pulseIntensity);
             }
             break;
             
@@ -1996,8 +2190,8 @@ function applyMovementSignature(enemy) {
                 
                 // Add subtle pulsing glow
                 const glowPulse = 0.8 + Math.sin(t * 0.1) * 0.2;
-                if (enemy.sphere1.material) enemy.sphere1.material.emissiveIntensity = glowPulse;
-                if (enemy.sphere2.material) enemy.sphere2.material.emissiveIntensity = glowPulse;
+                if (enemy.sphere1.material) setEmissiveIntensity(enemy.sphere1.material, glowPulse);
+                if (enemy.sphere2.material) setEmissiveIntensity(enemy.sphere2.material, glowPulse);
             }
             break;
     }
@@ -2034,7 +2228,7 @@ function applyMovementSignature(enemy) {
     if (profile && (profile.type === 'glow' || profile.type === 'pulse') && profile.pulseSpeed > 0 && enemy.baseMaterial) {
         const baseIntensity = profile.glowIntensity || 0.3;
         const pulseRange = profile.pulseRange || 0.15;
-        enemy.baseMaterial.emissiveIntensity = baseIntensity + Math.sin(t * profile.pulseSpeed) * pulseRange;
+        setEmissiveIntensity(enemy.baseMaterial, baseIntensity + Math.sin(t * profile.pulseSpeed) * pulseRange);
     }
 }
 
@@ -2067,10 +2261,10 @@ function updateTelegraph(enemy) {
     // Apply telegraph visual - simple emissive glow change (use frame counter for animation)
     const mat = enemy.baseMaterial || enemy.material;
     if (shouldTelegraph && mat && mat.emissive) {
-        mat.emissiveIntensity = 0.7 + Math.sin(enemy.movementTimer * 0.12) * 0.3;
+        setEmissiveIntensity(mat, 0.7 + Math.sin(enemy.movementTimer * 0.12) * 0.3);
     } else if (mat && mat.emissive) {
         const profile = enemy.visualProfile;
-        mat.emissiveIntensity = profile?.glowIntensity || 0.3;
+        setEmissiveIntensity(mat, profile?.glowIntensity || 0.3);
     }
 }
 
@@ -2116,11 +2310,69 @@ function updateChaseEnemy(enemy) {
     const dist = enemy.position.distanceTo(player.position);
     const tuningMult = getEnemySpeedTuningMultiplier();
     
-    // Closing speed acceleration - enemies speed up when close to player
-    let speedMultiplier = 1.0;
-    if (dist < 10) speedMultiplier = 1.5;       // 50% faster when very close
-    else if (dist < 20) speedMultiplier = 1.2;  // 20% faster when medium range
+    // Check for dash movement (micro-dash for grunt and gruntBig)
+    const typeData = ENEMY_TYPES[enemy.enemyType];
+    const hasDash = typeData && typeData.dashCooldownFrames && typeData.dashDurationFrames;
     
+    if (hasDash) {
+        // Initialize dash state if needed
+        if (enemy.dashCooldownTimer === undefined) {
+            enemy.dashCooldownTimer = 0;
+            enemy.dashActiveTimer = 0;
+            enemy.isDashing = false;
+        }
+        
+        if (enemy.isDashing) {
+            // Dash active - move faster toward player
+            enemy.dashActiveTimer++;
+            if (enemy.dashActiveTimer >= typeData.dashDurationFrames) {
+                // Dash complete - enter cooldown
+                enemy.isDashing = false;
+                enemy.dashActiveTimer = 0;
+                enemy.dashCooldownTimer = 0;
+            } else {
+                // During dash - move at dash speed
+                tempVec3.subVectors(player.position, enemy.position);
+                tempVec3.y = 0;
+                tempVec3.normalize();
+                
+                const dashSpeed = enemy.speed * typeData.dashSpeedMult;
+                enemy.position.x += tempVec3.x * dashSpeed * tuningMult;
+                enemy.position.z += tempVec3.z * dashSpeed * tuningMult;
+                
+                // Skip normal movement during dash
+                if (gameState.unlockedEnemyBehaviors.jumping) {
+                    for (const obs of obstacles) {
+                        const c = obs.collisionData;
+                        const s = enemy.baseSize * enemy.scale.x;
+                        if (enemy.position.x + s > c.minX && 
+                            enemy.position.x - s < c.maxX && 
+                            enemy.position.z + s > c.minZ && 
+                            enemy.position.z - s < c.maxZ) {
+                            if (enemy.velocityY <= 0 && enemy.position.y < c.topY + s + 0.5) {
+                                enemy.velocityY = 0.1;
+                            }
+                        }
+                    }
+                }
+                return; // Skip normal chase movement
+            }
+        } else {
+            // Cooldown phase - count down
+            enemy.dashCooldownTimer++;
+            if (enemy.dashCooldownTimer >= typeData.dashCooldownFrames) {
+                // Cooldown complete - start dash
+                enemy.isDashing = true;
+                enemy.dashActiveTimer = 0;
+                enemy.dashCooldownTimer = 0;
+            }
+        }
+    }
+    
+    // Normal chase movement (or during dash cooldown)
+    // No close-range speed boost - player must be able to kite and get away
+    const speedMultiplier = 1.0;
+
     // Calculate desired direction toward player
     tempVec3.subVectors(player.position, enemy.position);
     tempVec3.y = 0;
@@ -2131,8 +2383,9 @@ function updateChaseEnemy(enemy) {
     tempVec3.add(steerForce);
     tempVec3.normalize();
     
-    enemy.position.x += tempVec3.x * enemy.speed * speedMultiplier * tuningMult;
-    enemy.position.z += tempVec3.z * enemy.speed * speedMultiplier * tuningMult;
+    const zoneMult = enemy.arenaZoneSpeedMult ?? 1;
+    enemy.position.x += tempVec3.x * enemy.speed * speedMultiplier * tuningMult * zoneMult;
+    enemy.position.z += tempVec3.z * enemy.speed * speedMultiplier * tuningMult * zoneMult;
     
     if (gameState.unlockedEnemyBehaviors.jumping) {
         for (const obs of obstacles) {
@@ -2161,14 +2414,16 @@ function updateShooterEnemy(enemy) {
         tempVec3.subVectors(player.position, enemy.position);
         tempVec3.y = 0;
         tempVec3.normalize();
-        enemy.position.x += tempVec3.x * enemy.speed * tuningMult;
-        enemy.position.z += tempVec3.z * enemy.speed * tuningMult;
+        const zoneMult = enemy.arenaZoneSpeedMult ?? 1;
+        enemy.position.x += tempVec3.x * enemy.speed * tuningMult * zoneMult;
+        enemy.position.z += tempVec3.z * enemy.speed * tuningMult * zoneMult;
     } else if (dist < enemy.shootRange * 0.5) {
         tempVec3.subVectors(enemy.position, player.position);
         tempVec3.y = 0;
         tempVec3.normalize();
-        enemy.position.x += tempVec3.x * enemy.speed * 0.5 * tuningMult;
-        enemy.position.z += tempVec3.z * enemy.speed * 0.5 * tuningMult;
+        const zm = enemy.arenaZoneSpeedMult ?? 1;
+        enemy.position.x += tempVec3.x * enemy.speed * 0.5 * tuningMult * zm;
+        enemy.position.z += tempVec3.z * enemy.speed * 0.5 * tuningMult * zm;
     }
     
     // Frame-based shooting cooldown
@@ -2181,17 +2436,18 @@ function updateShooterEnemy(enemy) {
 
 function updateBouncerEnemy(enemy) {
     const tuningMult = getEnemySpeedTuningMultiplier();
+    const arenaBound = getArenaBounds(gameState.currentArena);
     enemy.position.x += enemy.velocity.x * tuningMult;
     enemy.position.z += enemy.velocity.z * tuningMult;
     
     // Wall bouncing
-    if (enemy.position.x < -42 || enemy.position.x > 42) {
+    if (enemy.position.x < -arenaBound || enemy.position.x > arenaBound) {
         enemy.velocity.x *= -1;
-        enemy.position.x = Math.max(-42, Math.min(42, enemy.position.x));
+        enemy.position.x = Math.max(-arenaBound, Math.min(arenaBound, enemy.position.x));
     }
-    if (enemy.position.z < -42 || enemy.position.z > 42) {
+    if (enemy.position.z < -arenaBound || enemy.position.z > arenaBound) {
         enemy.velocity.z *= -1;
-        enemy.position.z = Math.max(-42, Math.min(42, enemy.position.z));
+        enemy.position.z = Math.max(-arenaBound, Math.min(arenaBound, enemy.position.z));
     }
     
     // Obstacle bouncing (proper reflection - only invert perpendicular axis)
@@ -2246,7 +2502,8 @@ function updateBouncerEnemy(enemy) {
     
     // Speed cap
     const speed = Math.sqrt(enemy.velocity.x * enemy.velocity.x + enemy.velocity.z * enemy.velocity.z);
-    const speedCap = enemy.speed * tuningMult;
+    const zoneMultB = enemy.arenaZoneSpeedMult ?? 1;
+    const speedCap = enemy.speed * tuningMult * zoneMultB;
     if (speed > speedCap) {
         enemy.velocity.x = (enemy.velocity.x / speed) * speedCap;
         enemy.velocity.z = (enemy.velocity.z / speed) * speedCap;
@@ -2296,11 +2553,12 @@ function updateShieldBreakerEnemy(enemy) {
     }
     
     if (enemy.isRushing) {
+        const arenaBound = getArenaBounds(gameState.currentArena);
         enemy.position.add(enemy.rushDirection.clone().multiplyScalar(enemy.rushSpeed * tuningMult));
-        if (Math.abs(enemy.position.x) > 42 || Math.abs(enemy.position.z) > 42) {
+        if (Math.abs(enemy.position.x) > arenaBound || Math.abs(enemy.position.z) > arenaBound) {
             enemy.isRushing = false;
-            enemy.position.x = Math.max(-42, Math.min(42, enemy.position.x));
-            enemy.position.z = Math.max(-42, Math.min(42, enemy.position.z));
+            enemy.position.x = Math.max(-arenaBound, Math.min(arenaBound, enemy.position.x));
+            enemy.position.z = Math.max(-arenaBound, Math.min(arenaBound, enemy.position.z));
         }
     } else {
         updateChaseEnemy(enemy);
@@ -2312,8 +2570,9 @@ function updateWaterBalloonEnemy(enemy) {
     tempVec3.subVectors(player.position, enemy.position);
     tempVec3.y = 0;
     tempVec3.normalize();
-    enemy.position.x += tempVec3.x * enemy.speed * tuningMult;
-    enemy.position.z += tempVec3.z * enemy.speed * tuningMult;
+    const zoneMult = enemy.arenaZoneSpeedMult ?? 1;
+    enemy.position.x += tempVec3.x * enemy.speed * tuningMult * zoneMult;
+    enemy.position.z += tempVec3.z * enemy.speed * tuningMult * zoneMult;
     
     if (enemy.size < enemy.maxSize) {
         enemy.size += enemy.growRate;
@@ -2378,7 +2637,7 @@ function updateTeleporterEnemy(enemy) {
 
 // Helper: Find nearest point on arena edge
 function findNearestEdgePoint(position) {
-    const ARENA_BOUND = 42;  // Arena extends from -42 to +42
+    const ARENA_BOUND = getArenaBounds(gameState.currentArena);
     const x = position.x;
     const z = position.z;
     
@@ -2405,7 +2664,7 @@ function findNearestEdgePoint(position) {
 
 // Helper: Calculate distance to nearest arena edge
 function distanceToEdge(position) {
-    const ARENA_BOUND = 42;
+    const ARENA_BOUND = getArenaBounds(gameState.currentArena);
     const distX = Math.min(Math.abs(position.x - (-ARENA_BOUND)), Math.abs(position.x - ARENA_BOUND));
     const distZ = Math.min(Math.abs(position.z - (-ARENA_BOUND)), Math.abs(position.z - ARENA_BOUND));
     return Math.min(distX, distZ);
@@ -2480,8 +2739,9 @@ function updateFleeEnemy(enemy) {
         tempVec3.normalize();
         
         // Move toward edge
-        enemy.position.x += tempVec3.x * enemy.speed * tuningMult;
-        enemy.position.z += tempVec3.z * enemy.speed * tuningMult;
+        const zoneMultTR = enemy.arenaZoneSpeedMult ?? 1;
+        enemy.position.x += tempVec3.x * enemy.speed * tuningMult * zoneMultTR;
+        enemy.position.z += tempVec3.z * enemy.speed * tuningMult * zoneMultTR;
         
         // Zig-zag if blocked (add perpendicular component)
         if (distToTarget < 2 && Math.random() < 0.1) {

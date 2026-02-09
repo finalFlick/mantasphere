@@ -306,7 +306,7 @@ function spawnGlitchVfx(position, color, count) {
     }
 }
 
-function getNextParticle() {
+export function getNextParticle() {
     const particle = particlePool[poolIndex];
     poolIndex = (poolIndex + 1) % PARTICLE_POOL_SIZE;
     return particle;
@@ -375,6 +375,12 @@ export function updateParticles(delta) {
                         p.position.x += (Math.random() - 0.5) * 0.3;
                         p.position.z += (Math.random() - 0.5) * 0.3;
                     }
+                    break;
+                    
+                case 'ember':
+                    p.velocity.y -= 0.003;  // Slow fall
+                    p.material.opacity = (p.life / p.maxLife) * 0.9;
+                    p.scale.multiplyScalar(0.98);  // Gentle shrink
                     break;
                     
                 default:

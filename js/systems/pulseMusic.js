@@ -1007,6 +1007,140 @@ export const PulseMusic = {
         this.playVictoryStinger();
     },
     
+    // ============================================================================
+    // KRAKEN'S PULSE SFX
+    // ============================================================================
+    
+    onKrakensTell() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        
+        // Sub-bass pressure swell (sine at ~35Hz, gain ramp up over 0.5s, frequency sweep downward)
+        const swellOsc = this.ctx.createOscillator();
+        const swellGain = this.ctx.createGain();
+        
+        swellOsc.type = 'sine';
+        swellOsc.frequency.setValueAtTime(35, now);
+        swellOsc.frequency.exponentialRampToValueAtTime(25, now + 0.5);
+        
+        swellGain.gain.setValueAtTime(0.0, now);
+        swellGain.gain.linearRampToValueAtTime(0.6, now + 0.5);
+        swellGain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+        
+        swellOsc.connect(swellGain);
+        swellGain.connect(this.sfxBus);
+        swellOsc.start(now);
+        swellOsc.stop(now + 0.65);
+        swellOsc.endTime = now + 0.65;
+        this.activeOscillators.push(swellOsc);
+    },
+    
+    onKrakensPulse() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        // Sub impact (30Hz burst)
+        const subOsc = this.ctx.createOscillator();
+        const subGain = this.ctx.createGain();
+        subOsc.type = 'sine';
+        subOsc.frequency.setValueAtTime(30, now);
+        subGain.gain.setValueAtTime(0.8, now);
+        subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        subOsc.connect(subGain);
+        subGain.connect(this.sfxBus);
+        subOsc.start(now);
+        subOsc.stop(now + 0.25);
+        subOsc.endTime = now + 0.25;
+        this.activeOscillators.push(subOsc);
+        
+        // Dissonant stabs pitched to arena key
+        if (profile) {
+            const tritone = profile.rootMidi + 6;
+            const root = profile.rootMidi;
+            this.playStab(tritone, now, profile);
+            this.playStab(root + 1, now + 0.05, profile);
+        }
+        
+        // Noise burst (white noise with bandpass)
+        const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.2, this.ctx.sampleRate);
+        const noiseData = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < noiseData.length; i++) {
+            noiseData[i] = (Math.random() * 2 - 1) * (1 - i / noiseData.length);
+        }
+        
+        const noiseSource = this.ctx.createBufferSource();
+        const noiseGain = this.ctx.createGain();
+        const noiseFilter = this.ctx.createBiquadFilter();
+        
+        noiseSource.buffer = noiseBuffer;
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.setValueAtTime(800, now);
+        noiseFilter.Q.setValueAtTime(2, now);
+        
+        noiseGain.gain.setValueAtTime(0.5, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        
+        noiseSource.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.sfxBus);
+        noiseSource.start(now);
+        noiseSource.stop(now + 0.25);
+        
+        // Rolling thunder crack (delayed noise burst at 0.3s offset)
+        const thunderBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.3, this.ctx.sampleRate);
+        const thunderData = thunderBuffer.getChannelData(0);
+        for (let i = 0; i < thunderData.length; i++) {
+            thunderData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / thunderData.length, 2);
+        }
+        
+        const thunderSource = this.ctx.createBufferSource();
+        const thunderGain = this.ctx.createGain();
+        const thunderFilter = this.ctx.createBiquadFilter();
+        
+        thunderSource.buffer = thunderBuffer;
+        thunderFilter.type = 'lowpass';
+        thunderFilter.frequency.setValueAtTime(400, now + 0.3);
+        thunderFilter.frequency.exponentialRampToValueAtTime(100, now + 0.6);
+        
+        thunderGain.gain.setValueAtTime(0.4, now + 0.3);
+        thunderGain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+        
+        thunderSource.connect(thunderFilter);
+        thunderFilter.connect(thunderGain);
+        thunderGain.connect(this.sfxBus);
+        thunderSource.start(now + 0.3);
+        thunderSource.stop(now + 0.65);
+    },
+    
+    onKrakensAftermath() {
+        if (!this._checkReady()) return;
+        
+        const now = this.ctx.currentTime;
+        const profile = this.currentProfile;
+        
+        if (!profile) return;
+        
+        // Low resonance drone (sine at root note, very quiet, exponential decay over 1.5s)
+        const droneOsc = this.ctx.createOscillator();
+        const droneGain = this.ctx.createGain();
+        
+        droneOsc.type = 'sine';
+        droneOsc.frequency.setValueAtTime(this.midiToFreq(profile.rootMidi), now);
+        
+        droneGain.gain.setValueAtTime(0.15, now);
+        droneGain.gain.exponentialRampToValueAtTime(0.01, now + 1.5);
+        
+        droneOsc.connect(droneGain);
+        droneGain.connect(this.sfxBus);
+        droneOsc.start(now);
+        droneOsc.stop(now + 1.6);
+        droneOsc.endTime = now + 1.6;
+        this.activeOscillators.push(droneOsc);
+    },
+    
     // Boss 4 (THE OVERGROWTH) specific audio cues
     onBossGrowthStart() {
         if (!this._checkReady()) return;

@@ -8,6 +8,14 @@ import { DEBUG_CONFIG, DEBUG_ENABLED } from '../config/constants.js';
 import { initBalanceTunerUI } from './balanceTunerUI.js';
 import { getBalanceOverrideMap, exportBalanceOverrides, importBalanceOverrides } from '../config/balanceRegistry.js';
 import { log } from '../systems/debugLog.js';
+import {
+    initPlacementEditor,
+    enablePlacementMode,
+    disablePlacementMode,
+    setPlacementType,
+    getPlacementTypes,
+    exportLayoutJSON
+} from '../arena/placementEditor.js';
 
 // State
 let currentTab = 'quick';
@@ -41,7 +49,7 @@ const commands = [
         const val = parseFloat(match[1]);
         if (!isNaN(val) && val >= 0.5 && val <= 2.0) {
             TUNING.difficultyMultiplier = val;
-            updateTuningSliders();
+            document.dispatchEvent(new CustomEvent('debug:refreshTuningSlidersFromTuning'));
             return `Difficulty set to ${val.toFixed(2)}x`;
         }
         return 'Invalid difficulty (0.5-2.0)';
@@ -86,7 +94,9 @@ export function initDebugMenu() {
         return;
     }
     
+    initPlacementEditor();
     initQuickBar();
+    initPlacementControls();
     initTabs();
     initCommandPalette();
     initStateInspector();
@@ -185,6 +195,53 @@ function initQuickBar() {
     
     // Update quick bar periodically
     setInterval(updateQuickBar, 1000);
+
+    // Placement mode and Export layout (quick bar)
+    const placementBtn = document.getElementById('quick-placement');
+    const exportLayoutBtn = document.getElementById('quick-export-layout');
+    if (placementBtn) {
+        placementBtn.addEventListener('click', () => {
+            gameState.debug.placementMode = !gameState.debug.placementMode;
+            if (gameState.debug.placementMode) enablePlacementMode();
+            else disablePlacementMode();
+            placementBtn.textContent = gameState.debug.placementMode ? 'Placement ON' : 'Placement';
+        });
+    }
+    if (exportLayoutBtn) {
+        exportLayoutBtn.addEventListener('click', () => {
+            const json = exportLayoutJSON();
+            if (navigator.clipboard) navigator.clipboard.writeText(json);
+            log('DEBUG', 'layout_exported', { length: json.length });
+        });
+    }
+}
+
+function initPlacementControls() {
+    const placementCheck = document.getElementById('debug-placement-mode');
+    const typeSelect = document.getElementById('debug-placement-type');
+    const exportBtn = document.getElementById('debug-export-layout');
+    if (placementCheck) {
+        placementCheck.checked = !!gameState.debug.placementMode;
+        placementCheck.addEventListener('change', () => {
+            gameState.debug.placementMode = placementCheck.checked;
+            if (gameState.debug.placementMode) enablePlacementMode();
+            else disablePlacementMode();
+            const placementBtn = document.getElementById('quick-placement');
+            if (placementBtn) placementBtn.textContent = gameState.debug.placementMode ? 'Placement ON' : 'Placement';
+        });
+    }
+    if (typeSelect) {
+        const types = getPlacementTypes();
+        typeSelect.innerHTML = types.map(t => `<option value="${t}">${t}</option>`).join('');
+        typeSelect.addEventListener('change', () => setPlacementType(typeSelect.value));
+    }
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            const json = exportLayoutJSON();
+            if (navigator.clipboard) navigator.clipboard.writeText(json);
+            log('DEBUG', 'layout_exported', { length: json.length });
+        });
+    }
 }
 
 function updateQuickBar() {
@@ -216,6 +273,15 @@ function initTabs() {
 function showTab(tabId) {
     currentTab = tabId;
     
+    const debugScreen = document.getElementById('debug-screen');
+    if (debugScreen) {
+        debugScreen.classList.toggle('debug-screen-visual-panel', tabId === 'visual');
+    }
+    // Visual tab is used for live scene tweaking; pause so the world is readable.
+    if (tabId === 'visual' && gameState.running) {
+        gameState.paused = true;
+    }
+
     // Update tab buttons
     document.querySelectorAll('.debug-tab').forEach(t => {
         t.classList.toggle('active', t.dataset.tab === tabId);
@@ -523,7 +589,8 @@ function loadPreset(name) {
 function importPreset(preset) {
     if (preset.tuning) {
         Object.assign(TUNING, preset.tuning);
-        updateTuningSliders();
+        // Refresh all tuning/brightness slider UI from TUNING (main.js listens and applies brightness).
+        document.dispatchEvent(new CustomEvent('debug:refreshTuningSlidersFromTuning'));
     }
     
     if (preset.balance) {

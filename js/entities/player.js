@@ -2,13 +2,16 @@ import { scene, camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { keys, cameraAngleX, cameraAngleY } from '../core/input.js';
 import { obstacles, hazardZones, enemies, getCurrentBoss, tempVec3, tempVec3_2, tempVec3_3, tempVec3_4, tempVec3_5 } from '../core/entities.js';
-import { PLAYER_JUMP_VELOCITY, PLAYER_GRAVITY, BOUNCE_FACTORS, TRAIL_SPAWN_DISTANCE, WAVE_STATE } from '../config/constants.js';
+import { PLAYER_JUMP_VELOCITY, PLAYER_GRAVITY, BOUNCE_FACTORS, STOMP_BOUNCE_VELOCITY, STOMP_PUSH_SPEED, TRAIL_SPAWN_DISTANCE, WAVE_STATE } from '../config/constants.js';
 import { TUNING } from '../config/tuning.js';
+import { getArenaBounds, getSpeedBowlsForArena, getBowlSurfaceYAt } from '../config/arenas.js';
 import { spawnParticle } from '../effects/particles.js';
 import { spawnTrail, lastTrailPos, setLastTrailPos } from '../effects/trail.js';
 import { takeDamage } from '../systems/damage.js';
 import { cleanupVFX, createChargeTrailSegment, triggerSlowMo, triggerScreenFlash, updateChargeTrailSegment } from '../systems/visualFeedback.js';
-import { getLastShot, getFireRate, applyDashStrikeDamageToEnemy, applyDashStrikeDamageToBoss } from '../systems/projectiles.js';
+import { getLastShot, getFireRate, applyDashStrikeDamageToEnemy, applyDashStrikeDamageToBoss, applyStompDamageToEnemy } from '../systems/projectiles.js';
+import { collectAllXpGems } from '../systems/pickups.js';
+import { PROJECTILE_ITEMS } from '../config/items.js';
 import { PulseMusic } from '../systems/pulseMusic.js';
 import { safeFlashMaterial } from '../systems/materialUtils.js';
 import { spawnBubbleParticle } from '../effects/particles.js';
@@ -112,10 +115,11 @@ export function createPlayer() {
     player.add(bodyGroup);
     player.bodyGroup = bodyGroup;
     
+    // Darker, more saturated base + lower emissive for better contrast
     const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x44aaff,
-        emissive: 0x224488,
-        emissiveIntensity: 0.3
+        color: 0x2266aa,
+        emissive: 0x114477,
+        emissiveIntensity: 0.22
     });
     
     // Manta ray body - wide flat ellipsoid
@@ -160,7 +164,7 @@ export function createPlayer() {
         new THREE.MeshBasicMaterial({
             color: 0x44aaff,
             transparent: true,
-            opacity: 0.15
+            opacity: 0.1
         })
     );
     glow.scale.set(1.5, 0.5, 1.2);  // Match body proportions
@@ -258,7 +262,8 @@ export function createPlayer() {
     player.flashPhase = 0;
     player.isDashStrikeInvuln = false;
     player.dashStrikeGraceFrames = 0;
-    
+    player.insideBowlIndex = -1;
+
     return player;
 }
 
@@ -306,6 +311,9 @@ export function updatePlayer(delta) {
     if (gameState.dashStrikeCooldownTimer > 0) {
         gameState.dashStrikeCooldownTimer--;
     }
+    if (gameState.siphonCooldownTimer > 0) {
+        gameState.siphonCooldownTimer--;
+    }
     if (dashCooldownFrames > 0) {
         dashCooldownFrames--;
     }
@@ -316,6 +324,13 @@ export function updatePlayer(delta) {
         if (gameState.dashStrikeEnabled && gameState.dashStrikeCooldownTimer <= 0) {
             startDashStrike(moveDir);
         }
+    }
+    
+    // Siphon: pull all XP orbs (blueprint active ability, E key)
+    if (gameState.heldItems && gameState.heldItems.includes('siphon') && keys['KeyE'] && gameState.siphonCooldownTimer <= 0) {
+        collectAllXpGems();
+        const siphonItem = PROJECTILE_ITEMS.siphon;
+        gameState.siphonCooldownTimer = (siphonItem && siphonItem.cooldownSeconds) ? Math.floor(siphonItem.cooldownSeconds * 60) : 1200;
     }
     
     const oldX = player.position.x;
@@ -470,6 +485,8 @@ export function updatePlayer(delta) {
     
     // Ground/Platform landing
     let groundY = 1;
+    const bowlSurfaceY = getBowlSurfaceYAt(gameState.currentArena, player.position.x, player.position.z);
+    if (bowlSurfaceY !== null) groundY = bowlSurfaceY + 1;
     for (const obs of obstacles) {
         if (!obs.collisionData) continue;
         const c = obs.collisionData;
@@ -487,7 +504,55 @@ export function updatePlayer(delta) {
         }
     }
     
-    if (player.position.y < groundY) {
+    // Stomp check: landing on an enemy from above (before ground landing)
+    let stompHandled = false;
+    if (player.velocity.y <= 0 && (player.wasInAir || !player.isGrounded)) {
+        const stompTolerance = 0.15;
+        let bestEnemy = null;
+        let bestTop = -Infinity;
+        for (let i = 0; i < enemies.length; i++) {
+            const enemy = enemies[i];
+            if (!enemy || enemy.isDying) continue;
+            const scaledSize = enemy.baseSize * enemy.scale.x;
+            const xzDistSq = (player.position.x - enemy.position.x) ** 2 + (player.position.z - enemy.position.z) ** 2;
+            const overlapRadius = scaledSize + playerRadius;
+            if (xzDistSq > overlapRadius * overlapRadius) continue;
+            const enemyTop = enemy.position.y + scaledSize;
+            const playerBottom = player.position.y - playerRadius;
+            if (playerBottom > enemyTop + stompTolerance) continue;
+            if (enemyTop > bestTop) {
+                bestTop = enemyTop;
+                bestEnemy = { enemy, index: i };
+            }
+        }
+        if (bestEnemy) {
+            const { enemy, index } = bestEnemy;
+            const result = applyStompDamageToEnemy(enemy, index);
+            enemy.stompedThisFrame = true;
+            stompHandled = true;
+            if (result.killed) {
+                player.position.y = groundY;
+                player.velocity.y = 0;
+                player.isGrounded = true;
+                player.wasInAir = false;
+                player.bounceCount = 0;
+                spawnParticle(enemy.position.clone(), 0x44aaff, 6);
+            } else {
+                player.velocity.y = STOMP_BOUNCE_VELOCITY;
+                tempVec3.set(
+                    player.position.x - enemy.position.x,
+                    0,
+                    player.position.z - enemy.position.z
+                ).normalize();
+                player.velocity.x += tempVec3.x * STOMP_PUSH_SPEED;
+                player.velocity.z += tempVec3.z * STOMP_PUSH_SPEED;
+                const scaledSize = enemy.baseSize * enemy.scale.x;
+                player.position.y = enemy.position.y + scaledSize + playerRadius + 0.05;
+            }
+        }
+    }
+    
+    if (!stompHandled && player.position.y < groundY) {
         player.position.y = groundY;
         if (player.wasInAir) {
             if (player.bounceCount < BOUNCE_FACTORS.length) {
@@ -509,7 +574,7 @@ export function updatePlayer(delta) {
             player.velocity.y = 0;
             player.isGrounded = true;
         }
-    } else {
+    } else if (!stompHandled) {
         player.isGrounded = false;
     }
     
@@ -536,7 +601,32 @@ export function updatePlayer(delta) {
         if (Math.abs(player.velocity.x) < 0.01) player.velocity.x = 0;
         if (Math.abs(player.velocity.z) < 0.01) player.velocity.z = 0;
     }
-    
+
+    // Speed bowl zones (outside 40x40): pull toward center when inside; exit boost when leaving
+    const bowls = getSpeedBowlsForArena(gameState.currentArena);
+    const prevInsideBowlIndex = player.insideBowlIndex ?? -1;
+    let insideBowlIndex = -1;
+    for (let i = 0; i < bowls.length; i++) {
+        const b = bowls[i];
+        const dx = b.cx - player.position.x;
+        const dz = b.cz - player.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < b.R) {
+            insideBowlIndex = i;
+            const pullStrength = 0.02 * (1 - dist / b.R);
+            tempVec3.set(dx, 0, dz).normalize().multiplyScalar(pullStrength);
+            player.position.add(tempVec3);
+        }
+    }
+    player.insideBowlIndex = insideBowlIndex;
+    if (prevInsideBowlIndex >= 0 && insideBowlIndex < 0) {
+        const b = bowls[prevInsideBowlIndex];
+        tempVec3.set(player.position.x - b.cx, 0, player.position.z - b.cz).normalize();
+        const mag = b.exitBoostMagnitude ?? 0.12;
+        player.velocity.x += tempVec3.x * mag;
+        player.velocity.z += tempVec3.z * mag;
+    }
+
     // Hit recovery (invulnerability frames) - flash animation
     if (player.isRecovering) {
         player.recoveryTimer--;
@@ -566,8 +656,9 @@ export function updatePlayer(delta) {
     }
     
     // Arena bounds
-    player.position.x = Math.max(-45, Math.min(45, player.position.x));
-    player.position.z = Math.max(-45, Math.min(45, player.position.z));
+    const arenaBound = getArenaBounds(gameState.currentArena);
+    player.position.x = Math.max(-arenaBound, Math.min(arenaBound, player.position.x));
+    player.position.z = Math.max(-arenaBound, Math.min(arenaBound, player.position.z));
     
     // Enhanced trail
     const isMoving = moveDir.length() > 0 || isDashing;
@@ -812,8 +903,9 @@ function startDashStrike(direction) {
     dashStrikeTargetPos.add(tempVec3_4.copy(direction).multiplyScalar(distance));
     
     // Clamp to arena bounds
-    dashStrikeTargetPos.x = Math.max(-42, Math.min(42, dashStrikeTargetPos.x));
-    dashStrikeTargetPos.z = Math.max(-42, Math.min(42, dashStrikeTargetPos.z));
+    const arenaBound = getArenaBounds(gameState.currentArena);
+    dashStrikeTargetPos.x = Math.max(-arenaBound, Math.min(arenaBound, dashStrikeTargetPos.x));
+    dashStrikeTargetPos.z = Math.max(-arenaBound, Math.min(arenaBound, dashStrikeTargetPos.z));
     
     // Set cooldown (frames)
     gameState.dashStrikeCooldownTimer = gameState.dashStrikeConfig.cooldown || 300;

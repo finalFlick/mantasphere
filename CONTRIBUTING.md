@@ -32,7 +32,7 @@ npm run dev
 
 # OR: Unbundled dev (zero config, no build)
 python -m http.server 8000
-# Open http://localhost:8000/index.dev.html
+# Open http://localhost:8000
 ```
 
 See [README.md](README.md) for all development options.
@@ -128,7 +128,7 @@ git push origin feat/your-feature
 
 **Build System:**
 - We use esbuild for bundling (dev: `npm run dev`, prod: `npm run build`)
-- Unbundled mode available via `index.dev.html` for quick iteration
+- Unbundled mode: serve with a static server and open the root URL for quick iteration
 - Don't add Webpack, Rollup, Vite, or other bundlers
 
 See `.cursorrules` for complete development guidelines.

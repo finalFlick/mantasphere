@@ -21,6 +21,7 @@ export const PROJECTILE_ITEMS = {
     pierce: {
         id: 'pierce',
         name: 'Pierce',
+        icon: '🔱',
         description: 'Projectiles pass through 1 extra target.',
         color: 0x44ddff,
         // Extra targets a projectile can pass through
@@ -29,6 +30,7 @@ export const PROJECTILE_ITEMS = {
     chain: {
         id: 'chain',
         name: 'Chain',
+        icon: '⛓️',
         description: 'On hit, a bolt arcs to 1 nearby enemy.',
         color: 0xffaa22,
         // Max chain targets per hit
@@ -41,12 +43,32 @@ export const PROJECTILE_ITEMS = {
     explosion: {
         id: 'explosion',
         name: 'Explosion',
+        icon: '💥',
         description: 'Hits explode for AoE damage.',
         color: 0xff4444,
         // Explosion radius (units)
         explosionRadius: 3,
         // Damage multiplier for AoE (relative to hit damage)
         explosionDamageMult: 0.4,
+    },
+    krakensPulse: {
+        id: 'krakensPulse',
+        name: "Kraken's Pulse",
+        icon: '🐙',
+        description: '1% chance every 10s: hellfire shockwave obliterates all enemies.',
+        color: 0xff4400,  // Hellfire orange
+        // No projectile-modifying properties -- this is a proc item
+        isPassiveProc: true,
+    },
+    siphon: {
+        id: 'siphon',
+        name: 'Siphon',
+        icon: '🧲',
+        description: 'Pull all XP orbs on the arena. Cooldown: 20s.',
+        color: 0x44ffcc,  // Teal/cyan to match XP
+        isActiveAbility: true,
+        cooldownSeconds: 20,
+        abilityKey: 'KeyE',
     },
 };
 
@@ -57,6 +79,7 @@ export const PROJECTILE_ITEMS = {
 export const ITEM_COMBINATIONS = {
     'chain+pierce': {
         name: 'Razor Swarm',
+        icon: '🌀',
         description: 'Piercing chain bolts shred groups.',
         color: 0x88ffaa,
     },

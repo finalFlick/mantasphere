@@ -1,6 +1,6 @@
 // Main entry point - coordinates all modules
-import { gameState, resetGameState } from './core/gameState.js';
-import { initScene, createGround, onWindowResize, render, scene, renderer, camera } from './core/scene.js';
+import { gameState, resetGameState, saveKrakenPulseDebug } from './core/gameState.js';
+import { initScene, createGround, onWindowResize, render, scene, renderer, camera, applyBrightnessTuning } from './core/scene.js';
 import { initInput, resetInput, checkCutsceneSkip, cleanupInput } from './core/input.js';
 import { resetAllEntities, enemies, getCurrentBoss } from './core/entities.js';
 import { WAVE_STATE, UI_UPDATE_INTERVAL, DEBUG_ENABLED, GAME_TITLE, VERSION, COMMIT_HASH, COMMIT_TIME_ISO, BUILD_TIME_ISO, enableDebugMode, PLAYTEST_CONFIG, DEFAULT_LIVES, ARENA_UPGRADE_CAPS, STAT_MAXIMUMS } from './config/constants.js';
@@ -11,6 +11,7 @@ import { updateEnemies, clearEnemyGeometryCache } from './entities/enemies.js';
 import { updateBoss } from './entities/boss.js';
 
 import { updateWaveSystem } from './systems/waveSystem.js';
+import { resetKrakensPulse } from './systems/krakensPulse.js';
 import { spawnSpecificEnemy } from './entities/enemies.js';
 import { spawnBoss } from './entities/boss.js';
 import { shootProjectile, updateProjectiles, resetLastShot, initProjectilePool, clearProjectiles } from './systems/projectiles.js';
@@ -26,12 +27,18 @@ import { gpuInfo } from './systems/gpuDetect.js';
 import { TUNING } from './config/tuning.js';
 
 import { generateArena, updateHazardZones } from './arena/generator.js';
+import { getArenaLayout } from './config/arenaLayouts.js';
+import { updateArenaZones, trySpawnArena1Event, updateArenaEvents } from './systems/arenaZones.js';
 
 import { initTrailPool, updateTrail, resetTrail } from './effects/trail.js';
 import { initParticlePool, updateParticles, resetParticles } from './effects/particles.js';
+import { initDamageNumberPool, updateDamageNumbers, resetDamageNumbers } from './effects/damageNumbers.js';
 import { updateSlowMo, updateScreenFlash, getTimeScale, updateCinematic, isCinematicActive, endCinematic, clearGeometryCache, startIntroCinematic, updateIntroCinematic, isIntroActive, startCinematic, triggerSlowMo } from './systems/visualFeedback.js';
 import { updateAmbience } from './systems/ambience.js';
-import { updateMaterialFlashes, clearMaterialFlashes } from './systems/materialUtils.js';
+import { updateUnderwaterAssets } from './systems/underwaterAssets.js';
+import { updateMaterialFlashes, clearMaterialFlashes, applyEmissiveMultiplier } from './systems/materialUtils.js';
+import { setVisualCalibrationWall } from './systems/visualCalibrationWall.js';
+import { initTextures } from './systems/textures.js';
 
 import { 
     updateUI, 
@@ -300,11 +307,13 @@ async function init() {
     }
     
     initScene();
+    await initTextures(renderer);
     createGround();
     const playerInstance = createPlayer();
     setPlayerRef(playerInstance);
     initTrailPool();
     initParticlePool();
+    initDamageNumberPool();
     initProjectilePool();
     
     // Initialize persistent systems
@@ -727,6 +736,7 @@ function startGame() {
     
     // Position player but don't start waves yet - wait for intro
     resetPlayer();
+    applyPlayerSpawnFromLayout(1);
     
     // Start intro cinematic
     startIntroCinematic(camera);
@@ -753,6 +763,7 @@ function startGame() {
 function restartGame() {
     cleanupGameState();
     generateArena(1);
+    applyPlayerSpawnFromLayout(1);
     spawnArena1ModulePickup();  // Spawn hidden Speed Module pickup
     applyStartingLives();
     
@@ -767,6 +778,10 @@ function restartGame() {
     PulseMusic.resume();
     PulseMusic.onArenaChange(1);
     PulseMusic.startMusicLoop();
+    
+    // Reset Kraken's Pulse
+    resetKrakensPulse();
+    resetDamageNumbers();
     
     updateUI();
     animate();
@@ -794,6 +809,14 @@ function returnToMainMenu() {
     updateMasteryDisplay();
 }
 
+function applyPlayerSpawnFromLayout(arenaNumber) {
+    const layout = getArenaLayout(arenaNumber);
+    if (layout && layout.playerSpawn && player) {
+        player.position.set(layout.playerSpawn.x, 1, layout.playerSpawn.z);
+        player.velocity.set(0, 0, 0);
+    }
+}
+
 function startAtArena(arenaNumber) {
     // Pause menu scene animation
     MenuScene.pause();
@@ -813,6 +836,7 @@ function startAtArena(arenaNumber) {
     // Generate the arena and start the game
     hideStartScreen();
     generateArena(arenaNumber);
+    applyPlayerSpawnFromLayout(arenaNumber);
     
     // Spawn hidden module pickup if starting at Arena 1
     if (arenaNumber === 1) {
@@ -945,7 +969,7 @@ function animate(currentTime) {
                     gameState.waveTimer = 0;
                 }
                 // Only render during intro - skip all game updates
-                renderer.render(scene, camera);
+                render();
                 return;
             }
             
@@ -953,7 +977,8 @@ function animate(currentTime) {
             updateSlowMo();
             updateScreenFlash();
             updateAmbience();  // Underwater atmosphere: bubbles, kelp, fish
-            
+            updateUnderwaterAssets(gameState.time?.delta ?? 16);  // Underwater decor animation
+
             // Handle cinematic camera mode (boss intros)
             const cinematicActive = isCinematicActive();
             const currentBoss = getCurrentBoss();
@@ -978,6 +1003,7 @@ function animate(currentTime) {
                 }
 
                 updateParticles(clampedDelta);
+                updateDamageNumbers();
                 updateTrail();
                 updateMaterialFlashes();
                 PulseMusic.update(gameState, enemies, currentBoss);
@@ -987,7 +1013,7 @@ function animate(currentTime) {
                     updateUI();
                     lastUIUpdate = now;
                 }
-                renderer.render(scene, camera);
+                render();
                 return;
             }
             
@@ -1017,12 +1043,13 @@ function animate(currentTime) {
                 
                 // Only update particles and UI during announcements
                 updateParticles(clampedDelta);
+                updateDamageNumbers();
                 const now = gameState.time.realSeconds;
                 if (now - lastUIUpdate > (UI_UPDATE_INTERVAL / 1000)) {
                     updateUI();
                     lastUIUpdate = now;
                 }
-                renderer.render(scene, camera);
+                render();
                 return;
             }
             
@@ -1035,6 +1062,9 @@ function animate(currentTime) {
             if (!cinematicActive) {
                 updatePlayer(clampedDelta);
             }
+            updateArenaZones(player, clampedDelta);
+            trySpawnArena1Event();
+            updateArenaEvents(player, clampedDelta);
             updateEnemies(clampedDelta);
             updateBoss();
             updateProjectiles(clampedDelta);
@@ -1043,6 +1073,7 @@ function animate(currentTime) {
             updateModulePickups();  // Update hidden module pickups
             updateChests();         // Update item chests
             updateParticles(clampedDelta);
+            updateDamageNumbers();
             updateTrail();
             updateMaterialFlashes();  // Frame-based material flash resets
             updateHazardZones();
@@ -1375,6 +1406,153 @@ function setupDebugControls() {
         format: (v) => `${Number(v).toFixed(2)}x`
     });
 
+    // ==================== BRIGHTNESS (Visual tab) ====================
+    const writeExposure = bindSlider('debug-visual-exposure', 'debug-visual-exposure-value', {
+        getValue: () => Number(TUNING.exposureMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => { TUNING.exposureMultiplier = Number(v); applyBrightnessTuning(); },
+        min: 0.5,
+        max: 2.0,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+    const writeAmbient = bindSlider('debug-visual-ambient', 'debug-visual-ambient-value', {
+        getValue: () => Number(TUNING.ambientLightMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => { TUNING.ambientLightMultiplier = Number(v); applyBrightnessTuning(); },
+        min: 0.5,
+        max: 1.5,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+    const writeDirectional = bindSlider('debug-visual-directional', 'debug-visual-directional-value', {
+        getValue: () => Number(TUNING.directionalLightMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => { TUNING.directionalLightMultiplier = Number(v); applyBrightnessTuning(); },
+        min: 0.5,
+        max: 1.5,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+    const writePointLights = bindSlider('debug-visual-point-lights', 'debug-visual-point-lights-value', {
+        getValue: () => Number(TUNING.pointLightsMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => { TUNING.pointLightsMultiplier = Number(v); applyBrightnessTuning(); },
+        min: 0.5,
+        max: 1.5,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+    const writeBloomStrength = bindSlider('debug-visual-bloom-strength', 'debug-visual-bloom-strength-value', {
+        getValue: () => Number(TUNING.bloomStrength ?? 0.2).toFixed(2),
+        setValue: (v) => { TUNING.bloomStrength = Number(v); applyBrightnessTuning(); },
+        min: 0,
+        max: 0.4,
+        format: (v) => Number(v).toFixed(2)
+    });
+    const writeGroundAlbedo = bindSlider('debug-visual-ground-albedo', 'debug-visual-ground-albedo-value', {
+        getValue: () => Number(TUNING.groundAlbedoMultiplier ?? 1.0).toFixed(2),
+        setValue: (v) => (TUNING.groundAlbedoMultiplier = Number(v)),
+        min: 0.7,
+        max: 1.5,
+        format: (v) => `${Number(v).toFixed(2)}x`
+    });
+    const writeEmissive = bindSlider('debug-visual-emissive', 'debug-visual-emissive-value', {
+        getValue: () => Number(TUNING.emissiveMultiplier ?? 0.35).toFixed(2),
+        setValue: (v) => { TUNING.emissiveMultiplier = Number(v); if (scene) applyEmissiveMultiplier(scene); },
+        min: 0,
+        max: 1,
+        format: (v) => Number(v).toFixed(2)
+    });
+
+    const resetBrightnessBtn = document.getElementById('debug-visual-brightness-reset');
+    if (resetBrightnessBtn) {
+        resetBrightnessBtn.addEventListener('click', () => {
+            TUNING.exposureMultiplier = 1.0;
+            TUNING.ambientLightMultiplier = 1.0;
+            TUNING.directionalLightMultiplier = 1.0;
+            TUNING.pointLightsMultiplier = 1.0;
+            TUNING.bloomStrength = 0.2;
+            TUNING.groundAlbedoMultiplier = 1.0;
+            TUNING.emissiveMultiplier = 0.35;
+            applyBrightnessTuning();
+            if (scene) applyEmissiveMultiplier(scene);
+            if (writeExposure) writeExposure();
+            if (writeAmbient) writeAmbient();
+            if (writeDirectional) writeDirectional();
+            if (writePointLights) writePointLights();
+            if (writeBloomStrength) writeBloomStrength();
+            if (writeGroundAlbedo) writeGroundAlbedo();
+            if (writeEmissive) writeEmissive();
+            log('DEBUG', 'brightness_reset', {});
+        });
+    }
+
+    // Classic (0.4 style) preset: no bloom, neutral multipliers, approximates 0.4.x look
+    const classicPresetBtn = document.getElementById('debug-visual-classic-preset');
+    if (classicPresetBtn) {
+        classicPresetBtn.addEventListener('click', () => {
+            gameState.settings.bloomEnabled = false;
+            TUNING.exposureMultiplier = 1.0;
+            TUNING.ambientLightMultiplier = 1.0;
+            TUNING.directionalLightMultiplier = 1.0;
+            TUNING.pointLightsMultiplier = 1.0;
+            TUNING.bloomStrength = 0;
+            TUNING.groundAlbedoMultiplier = 1.0;
+            TUNING.emissiveMultiplier = 0.35;
+            applyBrightnessTuning();
+            if (scene) applyEmissiveMultiplier(scene);
+            if (writeExposure) writeExposure();
+            if (writeAmbient) writeAmbient();
+            if (writeDirectional) writeDirectional();
+            if (writePointLights) writePointLights();
+            if (writeBloomStrength) writeBloomStrength();
+            if (writeGroundAlbedo) writeGroundAlbedo();
+            if (writeEmissive) writeEmissive();
+            log('DEBUG', 'classic_preset', {});
+        });
+    }
+
+    // Calibration wall (Debug Visual): checkbox + emissive slider
+    const calibrationWallCheck = document.getElementById('debug-visual-calibration-wall');
+    if (calibrationWallCheck) {
+        calibrationWallCheck.addEventListener('change', () => {
+            const checked = calibrationWallCheck.checked;
+            gameState.debugShowCalibrationWall = checked;
+            setVisualCalibrationWall(scene, gameState.currentArena, checked);
+        });
+    }
+    const calibrationEmissiveSlider = document.getElementById('debug-visual-calibration-emissive');
+    const calibrationEmissiveValue = document.getElementById('debug-visual-calibration-emissive-value');
+    if (calibrationEmissiveSlider && calibrationEmissiveValue) {
+        calibrationEmissiveSlider.addEventListener('input', () => {
+            const v = Number(calibrationEmissiveSlider.value);
+            calibrationEmissiveValue.textContent = v.toFixed(2);
+            const wall = scene.userData.visualCalibrationWall;
+            if (wall && wall.material) wall.material.emissiveIntensity = v;
+        });
+    }
+
+    // When a preset is imported, debug menu dispatches this so we refresh all slider UI from TUNING.
+    document.addEventListener('debug:refreshTuningSlidersFromTuning', () => {
+        if (writeSpawnRate) writeSpawnRate();
+        if (writeEnemySpeed) writeEnemySpeed();
+        if (writeGravity) writeGravity();
+        if (writeBreathingRoom) writeBreathingRoom();
+        if (writeStressThreshold) writeStressThreshold();
+        if (writeLandingStun) writeLandingStun();
+        if (writeFireRateEff) writeFireRateEff();
+        if (writeBossHp) writeBossHp();
+        if (writeBossDmg) writeBossDmg();
+        if (writeSpawnSafeRadius) writeSpawnSafeRadius();
+        if (writeTelegraphMult) writeTelegraphMult();
+        if (writeExposure) writeExposure();
+        if (writeAmbient) writeAmbient();
+        if (writeDirectional) writeDirectional();
+        if (writePointLights) writePointLights();
+        if (writeBloomStrength) writeBloomStrength();
+        if (writeGroundAlbedo) writeGroundAlbedo();
+        if (writeEmissive) writeEmissive();
+        if (writeDifficulty) writeDifficulty();
+        if (writeStartingLives) writeStartingLives();
+        if (writeEliteChance) writeEliteChance();
+        if (writeKrakenChance) writeKrakenChance();
+        if (writeKrakenInterval) writeKrakenInterval();
+        applyBrightnessTuning();
+    });
+
     // ==================== UX LEVER TOGGLES ====================
     function bindToggle(btnId, { getValue, setValue, labelOn, labelOff }) {
         const btn = document.getElementById(btnId);
@@ -1456,6 +1634,38 @@ function setupDebugControls() {
         labelOff: 'Attack Cone: OFF'
     });
 
+    const writeKrakenChance = bindSlider('debug-tuning-kraken-chance', 'debug-tuning-kraken-chance-value', {
+        getValue: () => Math.round((gameState.debug.krakensPulseChance || 0.01) * 100),
+        setValue: (v) => {
+            gameState.debug.krakensPulseChance = Number(v) / 100;
+            saveKrakenPulseDebug();  // Auto-save
+        },
+        min: 0,
+        max: 99,
+        format: (v) => `${v}%`
+    });
+
+    const writeKrakenInterval = bindSlider('debug-tuning-kraken-interval', 'debug-tuning-kraken-interval-value', {
+        getValue: () => gameState.debug.krakensPulseInterval || 10,
+        setValue: (v) => {
+            gameState.debug.krakensPulseInterval = Number(v);
+            saveKrakenPulseDebug();  // Auto-save
+        },
+        min: 1,
+        max: 10,
+        format: (v) => `${v}s`
+    });
+
+    const writeKrakensPulse = bindToggle('debug-toggle-krakens-pulse', {
+        getValue: () => !!gameState.debug.krakensPulseForceEnabled,
+        setValue: (v) => {
+            gameState.debug.krakensPulseForceEnabled = !!v;
+            saveKrakenPulseDebug();  // Auto-save
+        },
+        labelOn: "Kraken's Pulse: ON",
+        labelOff: "Kraken's Pulse: OFF"
+    });
+
     const resetTuningBtn = document.getElementById('debug-tuning-reset');
     if (resetTuningBtn) {
         resetTuningBtn.addEventListener('click', () => {
@@ -1478,6 +1688,15 @@ function setupDebugControls() {
             TUNING.eliteSpawnChance = 0;
             TUNING.bossRushEnabled = false;
             TUNING.attackConePreviewEnabled = true;
+            TUNING.exposureMultiplier = 1.0;
+            TUNING.ambientLightMultiplier = 0.7;
+            TUNING.directionalLightMultiplier = 1.1;
+            TUNING.pointLightsMultiplier = 0.95;
+            TUNING.bloomStrength = 0.2;
+            TUNING.groundAlbedoMultiplier = 1.0;
+            TUNING.emissiveMultiplier = 0.35;
+            applyBrightnessTuning();
+            if (scene) applyEmissiveMultiplier(scene);
 
             // Refresh UI from current tuning values
             if (writeSpawnRate) writeSpawnRate();
@@ -1500,6 +1719,24 @@ function setupDebugControls() {
             if (writeBossRush) writeBossRush();
             if (writeAttackCone) writeAttackCone();
 
+            // Reset Kraken Pulse debug settings
+            gameState.debug.krakensPulseChance = 0.01;
+            gameState.debug.krakensPulseInterval = 10;
+            gameState.debug.krakensPulseForceEnabled = false;
+            saveKrakenPulseDebug();  // Save defaults
+
+            // Refresh UI
+            if (writeKrakenChance) writeKrakenChance();
+            if (writeKrakenInterval) writeKrakenInterval();
+            if (writeKrakensPulse) writeKrakensPulse();
+            if (writeExposure) writeExposure();
+            if (writeAmbient) writeAmbient();
+            if (writeDirectional) writeDirectional();
+            if (writePointLights) writePointLights();
+            if (writeBloomStrength) writeBloomStrength();
+            if (writeGroundAlbedo) writeGroundAlbedo();
+            if (writeEmissive) writeEmissive();
+
             log('DEBUG', 'tuning_reset', { ...TUNING });
         });
     }
@@ -1518,6 +1755,7 @@ function startEmptyArena() {
     // Start at arena 1
     hideStartScreen();
     generateArena(1);
+    applyPlayerSpawnFromLayout(1);
     spawnArena1ModulePickup();  // Spawn hidden Speed Module pickup
     gameState.running = true;
     gameState.waveState = WAVE_STATE.WAVE_INTRO;
@@ -1578,6 +1816,7 @@ function debugWarpToArenaWave(arena, wave) {
     
     // Reset player position
     resetPlayer();
+    applyPlayerSpawnFromLayout(arena);
     
     // Update music
     PulseMusic.onArenaChange(arena);
@@ -1616,9 +1855,12 @@ function startBossBattle(bossNum) {
     // Transition to the correct arena
     gameState.currentArena = bossNum;
     generateArena(bossNum);
-    // Reset player to arena center
-    player.position.set(0, 1, 0);
-    player.velocity.set(0, 0, 0);
+    // Reset player position (use layout playerSpawn if defined)
+    applyPlayerSpawnFromLayout(bossNum);
+    if (!getArenaLayout(bossNum)?.playerSpawn) {
+        player.position.set(0, 1, 0);
+        player.velocity.set(0, 0, 0);
+    }
     
     // Update music for the arena
     PulseMusic.onArenaChange(bossNum);

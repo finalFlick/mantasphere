@@ -1,7 +1,52 @@
 // Material utility functions - reduces code duplication for common material operations
 
+import { TUNING } from '../config/tuning.js';
+
 // Frame-based flash queue (replaces setTimeout for pause-safe timing)
 const flashQueue = [];
+
+/**
+ * Scale factor for emissive (from TUNING). Use when setting emissiveIntensity at runtime.
+ * @returns {number}
+ */
+export function getEmissiveMultiplier() {
+    return Number(TUNING.emissiveMultiplier ?? 0.35);
+}
+
+/**
+ * Set material emissive intensity so it respects global emissive multiplier.
+ * Updates userData.baseEmissiveIntensity so applyEmissiveMultiplier(scene) keeps it in sync.
+ * @param {THREE.Material} mat
+ * @param {number} baseValue - intended intensity before global scale
+ */
+export function setEmissiveIntensity(mat, baseValue) {
+    if (!mat || typeof mat.emissiveIntensity !== 'number') return;
+    mat.userData.baseEmissiveIntensity = baseValue;
+    mat.emissiveIntensity = baseValue * getEmissiveMultiplier();
+}
+
+/**
+ * Apply global emissive multiplier to all materials under root (e.g. scene).
+ * Stores baseEmissiveIntensity in material.userData on first visit so slider changes don't compound.
+ * Call after arena generation and when emissive slider changes.
+ * @param {THREE.Object3D} rootObject3D
+ */
+export function applyEmissiveMultiplier(rootObject3D) {
+    if (!rootObject3D) return;
+    const mult = Number(TUNING.emissiveMultiplier ?? 0.35);
+    rootObject3D.traverse((obj) => {
+        if (!obj.isMesh) return;
+        const materials = Array.isArray(obj.material) ? obj.material : (obj.material ? [obj.material] : []);
+        for (const mat of materials) {
+            if (!mat || mat.disposed) continue;
+            if (typeof mat.emissiveIntensity !== 'number') continue;
+            if (mat.userData.baseEmissiveIntensity === undefined) {
+                mat.userData.baseEmissiveIntensity = mat.emissiveIntensity;
+            }
+            mat.emissiveIntensity = mat.userData.baseEmissiveIntensity * mult;
+        }
+    });
+}
 
 /**
  * Safely flash a material's emissive property with automatic reset.
@@ -17,9 +62,9 @@ const flashQueue = [];
 export function safeFlashMaterial(material, owner, flashColor, resetColor, resetIntensity = 0.3, durationMs = 50) {
     if (!material || !material.emissive) return;
     
-    // Apply flash immediately
+    // Apply flash immediately (scale by global emissive multiplier)
     material.emissive.setHex(flashColor);
-    material.emissiveIntensity = 1;
+    material.emissiveIntensity = 1 * getEmissiveMultiplier();
     
     // Convert ms to frames (60fps = 16.67ms/frame)
     const durationFrames = Math.max(1, Math.floor(durationMs / 16.67));
@@ -52,7 +97,8 @@ export function updateMaterialFlashes() {
                 !flash.material.disposed) {
                 try {
                     flash.material.emissive.setHex(flash.resetColor);
-                    flash.material.emissiveIntensity = flash.resetIntensity;
+                    flash.material.userData.baseEmissiveIntensity = flash.resetIntensity;
+                    flash.material.emissiveIntensity = flash.resetIntensity * getEmissiveMultiplier();
                 } catch (e) {
                     // Material disposed during callback - safely ignore
                 }

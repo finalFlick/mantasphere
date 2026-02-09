@@ -18,6 +18,7 @@ import { log, logOnce, logThrottled, assert } from '../systems/debugLog.js';
 import { incrementModuleCounter, tryLevelUpModule, getModuleLevel } from '../systems/moduleProgress.js';
 import { showModuleUnlockBanner } from '../ui/hud.js';
 import { createPorcupinefishMesh, createShieldfatherMesh } from './boss/bossMeshFactory.js';
+import { setEmissiveIntensity } from '../systems/materialUtils.js';
 
 // Anti-stuck detection uses BOSS_STUCK_THRESHOLD and BOSS_STUCK_FRAMES from constants.js
 
@@ -68,7 +69,7 @@ function updatePorcupinefishInflation(boss, deltaInflation) {
         // Spines get more orange/red when fully inflated (aggressive)
         if (spine.material && boss.phase >= 3) {
             spine.material.emissive.setHex(0xff4400);
-            spine.material.emissiveIntensity = 0.5 + shapeInflation * 0.3;
+            setEmissiveIntensity(spine.material, 0.5 + shapeInflation * 0.3);
         }
     });
     
@@ -95,7 +96,7 @@ function updatePorcupinefishInflation(boss, deltaInflation) {
     
     // Body color/emissive: brighter when deflated, dimmer when inflated (energy to shield)
     if (boss.pufferBodyMat) {
-        boss.pufferBodyMat.emissiveIntensity = 0.6 - shapeInflation * 0.2;
+        setEmissiveIntensity(boss.pufferBodyMat, 0.6 - shapeInflation * 0.2);
     }
 }
 
@@ -682,7 +683,7 @@ export function checkBossRetreat(boss) {
         PulseMusic.onBossExposed?.();
         // Make boss glow more intensely to signal retreat is imminent
         if (boss.bodyMaterial) {
-            boss.bodyMaterial.emissiveIntensity = 1.2;
+            setEmissiveIntensity(boss.bodyMaterial, 1.2);
         }
     }
     
@@ -1030,9 +1031,9 @@ export function updateBoss() {
         // Flash body material
         if (boss.bodyMaterial) {
             if (boss.exposedTimer % boss.exposedConfig.flashRate < boss.exposedConfig.flashRate / 2) {
-                boss.bodyMaterial.emissiveIntensity = 0.8;
+                setEmissiveIntensity(boss.bodyMaterial, 0.8);
             } else {
-                boss.bodyMaterial.emissiveIntensity = 0.4;
+                setEmissiveIntensity(boss.bodyMaterial, 0.4);
             }
         }
         
@@ -1043,7 +1044,7 @@ export function updateBoss() {
                 boss.exposedVFX = null;
             }
             if (boss.bodyMaterial) {
-                boss.bodyMaterial.emissiveIntensity = 0.5;
+                setEmissiveIntensity(boss.bodyMaterial, 0.5);
             }
             
             // Boss 1 Phase 3: Reactivate shield after exposed window ends
@@ -1088,7 +1089,7 @@ export function updateBoss() {
                 // Visual feedback: increase emissive intensity as enrage builds
                 if (minion.baseMaterial || minion.material) {
                     const mat = minion.baseMaterial || minion.material;
-                    mat.emissiveIntensity = 0.4 + boost * 0.8;  // Max 0.72 intensity
+                    setEmissiveIntensity(mat, 0.4 + boost * 0.8);  // Max 0.72 intensity
                 }
             }
         }
@@ -1584,7 +1585,7 @@ function startComboVFX(boss) {
     if (boss.phase >= 3) {
         boss.comboStanceActive = true;
         if (boss.bodyMaterial) {
-            boss.bodyMaterial.emissiveIntensity = 0.8;
+            setEmissiveIntensity(boss.bodyMaterial, 0.8);
         }
         // Slight forward tilt for "aggressive" posture
         boss.rotation.x = 0.1;
@@ -1609,7 +1610,7 @@ function updateComboVFX(boss) {
     // Phase 3 stance pulse
     if (boss.comboStanceActive && boss.bodyMaterial) {
         const pulse = 0.7 + 0.2 * Math.sin((gameState.time?.simSeconds ?? 0) * 10);
-        boss.bodyMaterial.emissiveIntensity = pulse;
+        setEmissiveIntensity(boss.bodyMaterial, pulse);
     }
 }
 
@@ -1644,7 +1645,7 @@ function endComboVFX(boss) {
     if (boss.comboStanceActive) {
         boss.comboStanceActive = false;
         if (boss.bodyMaterial) {
-            boss.bodyMaterial.emissiveIntensity = 0.5;
+            setEmissiveIntensity(boss.bodyMaterial, 0.5);
         }
         boss.rotation.x = 0;
     }
@@ -1911,7 +1912,7 @@ export function triggerDemoAbility(boss, abilityName) {
             // Enter interactive dodge wait state
             boss.aiState = 'demo_dodge_wait';
             boss.aiTimer = 0;
-            boss.bodyMaterial.emissiveIntensity = 1;
+            setEmissiveIntensity(boss.bodyMaterial, 1);
             boss.demoTutorialShown = false;  // Track if we've shown the tutorial text
             boss.interactiveDodgeCount = boss.interactiveDodgeCount || 0;  // Track interactive dodges (0-indexed)
             
@@ -2129,7 +2130,7 @@ function startAbility(boss, ability) {
     switch (ability) {
         case 'charge':
             boss.aiState = 'wind_up';
-            boss.bodyMaterial.emissiveIntensity = 1;
+            setEmissiveIntensity(boss.bodyMaterial, 1);
             boss.chargeMarker = null;  // Will be created on first frame
             // Porcupinefish: inflate during wind-up, reset wiggle
             if (boss.isPorcupinefish) {
@@ -2143,7 +2144,7 @@ function startAbility(boss, ability) {
             break;
         case 'jumpSlam':
             boss.aiState = 'jump_prep';
-            boss.bodyMaterial.emissiveIntensity = 1;
+            setEmissiveIntensity(boss.bodyMaterial, 1);
             break;
         case 'hazards':
             boss.aiState = 'hazards';
@@ -2476,7 +2477,7 @@ function continueCurrentAbility(boss) {
                 if (boss.wallChargeCount >= 2) {
                     boss.aiState = 'cooldown';
                     boss.aiTimer = 0;
-                    boss.bodyMaterial.emissiveIntensity = 0.5;
+                    setEmissiveIntensity(boss.bodyMaterial, 0.5);
                     boss.wallChargeCount = 0;
                     
                     // Boss 1: Set phase-based recovery timer for charge
@@ -2492,7 +2493,7 @@ function continueCurrentAbility(boss) {
                         // 3 interactive charges complete - end demo
                         boss.aiState = 'cooldown';
                         boss.aiTimer = 0;
-                        boss.bodyMaterial.emissiveIntensity = 0.5;
+                        setEmissiveIntensity(boss.bodyMaterial, 0.5);
                         boss.wallChargeCount = 0;
                         endDemoMode(boss);
                         
@@ -2685,7 +2686,7 @@ function continueCurrentAbility(boss) {
             if (boss.position.y <= boss.size * boss.growthScale + 0.1 && boss.velocityY <= 0) {
                 boss.aiState = 'landed';
                 boss.aiTimer = 0;
-                boss.bodyMaterial.emissiveIntensity = 0.5;
+                setEmissiveIntensity(boss.bodyMaterial, 0.5);
                 // Damage nearby player
                 if (!boss.introPreviewOnly && player.position.distanceTo(boss.position) < 6) {
                     const config = BOSS_CONFIG[gameState.currentArena];
@@ -3079,10 +3080,10 @@ function continueCurrentAbility(boss) {
                     const flashSpeed = 6;  // Faster than previous 10
                     if (boss.vulnerableTimer % flashSpeed < flashSpeed / 2) {
                         boss.bodyMaterial.emissive.setHex(0xffff00);  // Yellow = vulnerable
-                        boss.bodyMaterial.emissiveIntensity = 1.0;
+                        setEmissiveIntensity(boss.bodyMaterial, 1.0);
                     } else {
                         boss.bodyMaterial.emissive.setHex(boss.baseColor);
-                        boss.bodyMaterial.emissiveIntensity = 0.4;
+                        setEmissiveIntensity(boss.bodyMaterial, 0.4);
                     }
                 }
                 
@@ -3094,7 +3095,7 @@ function continueCurrentAbility(boss) {
                     }
                     if (boss.bodyMaterial) {
                         boss.bodyMaterial.emissive.setHex(boss.baseColor);
-                        boss.bodyMaterial.emissiveIntensity = 0.5;
+                        setEmissiveIntensity(boss.bodyMaterial, 0.5);
                     }
                     boss.aiState = 'idle';
                     boss.aiTimer = 0;
@@ -3146,7 +3147,7 @@ function continueCurrentAbility(boss) {
                 
                 // Pulsing glow during growth
                 if (boss.bodyMaterial) {
-                    boss.bodyMaterial.emissiveIntensity = 0.5 + Math.sin(boss.aiTimer * 0.2) * 0.3;
+                    setEmissiveIntensity(boss.bodyMaterial, 0.5 + Math.sin(boss.aiTimer * 0.2) * 0.3);
                 }
             }
             
@@ -3166,7 +3167,7 @@ function continueCurrentAbility(boss) {
                     boss.growthIndicator = null;
                 }
                 if (boss.bodyMaterial) {
-                    boss.bodyMaterial.emissiveIntensity = 0.5;
+                    setEmissiveIntensity(boss.bodyMaterial, 0.5);
                 }
                 boss.aiState = 'idle';
                 boss.aiTimer = 0;
@@ -3199,9 +3200,9 @@ function continueCurrentAbility(boss) {
             if (boss.bodyMaterial) {
                 const flashSpeed = 4 + shakeProgress * 8;
                 if (boss.aiTimer % Math.max(2, Math.floor(6 - shakeProgress * 4)) < Math.floor((6 - shakeProgress * 4) / 2)) {
-                    boss.bodyMaterial.emissiveIntensity = 0.8 + shakeProgress * 0.4;
+                    setEmissiveIntensity(boss.bodyMaterial, 0.8 + shakeProgress * 0.4);
                 } else {
-                    boss.bodyMaterial.emissiveIntensity = 0.4;
+                    setEmissiveIntensity(boss.bodyMaterial, 0.4);
                 }
             }
             
@@ -3232,7 +3233,7 @@ function continueCurrentAbility(boss) {
                 
                 // Reset material
                 if (boss.bodyMaterial) {
-                    boss.bodyMaterial.emissiveIntensity = 0.5;
+                    setEmissiveIntensity(boss.bodyMaterial, 0.5);
                 }
                 
                 PulseMusic.onBossSplit();
@@ -3463,8 +3464,8 @@ function continueCurrentAbility(boss) {
                     
                 case 'winding':
                     // Wind up (telegraph) - same VFX as normal wind_up
-                    boss.bodyMaterial.emissiveIntensity = 
-                        0.5 + (boss.retreatTimer / 30) * 0.5;
+                    setEmissiveIntensity(boss.bodyMaterial,
+                        0.5 + (boss.retreatTimer / 30) * 0.5);
                     
                     // Update charge marker
                     if (boss.chargeMarker) {
@@ -3757,7 +3758,7 @@ function continueCurrentAbility(boss) {
                         if (boss.shieldMesh.material.emissive) {
                             boss.shieldMesh.material.emissive.setHex(0xff4444);
                         }
-                        boss.shieldMesh.material.emissiveIntensity = 0.5;
+                        setEmissiveIntensity(boss.shieldMesh.material, 0.5);
                     }
                 }
                 triggerScreenFlash(0xff4444, 10);
@@ -4587,7 +4588,7 @@ function triggerPhaseTransition(boss, newPhase) {
     // Boss visual effect - bright white
     if (boss.bodyMaterial) {
         boss.bodyMaterial.emissive.setHex(0xffffff);
-        boss.bodyMaterial.emissiveIntensity = 1.5;
+        setEmissiveIntensity(boss.bodyMaterial, 1.5);
     }
     
     // Particle burst
@@ -4820,16 +4821,16 @@ function updateBossPhaseVisuals(boss) {
     switch (boss.phase) {
         case 1:
             boss.bodyMaterial.emissive.setHex(boss.baseColor);
-            boss.bodyMaterial.emissiveIntensity = 0.3;
+            setEmissiveIntensity(boss.bodyMaterial, 0.3);
             break;
         case 2:
             boss.bodyMaterial.emissive.setHex(boss.baseColor);
-            boss.bodyMaterial.emissiveIntensity = 0.5;
+            setEmissiveIntensity(boss.bodyMaterial, 0.5);
             break;
         case 3:
             // Red-shifted and intense
             boss.bodyMaterial.emissive.setHex(0xff4444);
-            boss.bodyMaterial.emissiveIntensity = 0.7;
+            setEmissiveIntensity(boss.bodyMaterial, 0.7);
             break;
     }
     
@@ -4843,7 +4844,7 @@ function updateBossPhaseVisuals(boss) {
                         if (spine.material) {
                             spine.material.color.setHex(0xffaa44);
                             spine.material.emissive.setHex(0xff6600);
-                            spine.material.emissiveIntensity = 0.3;
+                            setEmissiveIntensity(spine.material, 0.3);
                         }
                     });
                 }
@@ -4855,7 +4856,7 @@ function updateBossPhaseVisuals(boss) {
                         if (spine.material) {
                             spine.material.color.setHex(0xff8833);
                             spine.material.emissive.setHex(0xff5500);
-                            spine.material.emissiveIntensity = 0.4;
+                            setEmissiveIntensity(spine.material, 0.4);
                         }
                     });
                 }
@@ -4869,7 +4870,7 @@ function updateBossPhaseVisuals(boss) {
                         if (spine.material) {
                             spine.material.color.setHex(0xff4422);
                             spine.material.emissive.setHex(0xff2200);
-                            spine.material.emissiveIntensity = 0.6;
+                            setEmissiveIntensity(spine.material, 0.6);
                         }
                     });
                 }

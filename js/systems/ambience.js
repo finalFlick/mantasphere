@@ -5,6 +5,7 @@
 import { scene } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { AMBIENCE_CONFIG } from '../config/constants.js';
+import { getArenaBounds } from '../config/arenas.js';
 
 // Object pools (pre-allocated, reused)
 const bubblePool = [];
@@ -18,19 +19,35 @@ let fishGeometry = null;
 let initialized = false;
 let bubbleSpawnAccumulator = 0;
 
+// Radii derived from arena bound (set in initAmbience(arenaNum))
+let bubbleSpawnRadiusMin = 35;
+let bubbleSpawnRadiusMax = 48;
+let kelpRadiusMin = 38;
+let kelpRadiusMax = 47;
+let fishDistanceMin = 55;
+let fishDistanceMax = 70;
+
 // ==================== INITIALIZATION ====================
 
-export function initAmbience() {
+export function initAmbience(arenaNumber) {
     if (!AMBIENCE_CONFIG.enabled) return;
-    
+
+    const bound = getArenaBounds(arenaNumber ?? gameState.currentArena ?? 1);
+    bubbleSpawnRadiusMin = 0.35 * bound;
+    bubbleSpawnRadiusMax = 0.6 * bound;
+    kelpRadiusMin = 0.4 * bound;
+    kelpRadiusMax = 0.75 * bound;
+    fishDistanceMin = bound + 5;
+    fishDistanceMax = bound + 20;
+
     // Clean up any previous ambience first
     cleanupAmbience();
-    
-    // Initialize each system
+
+    // Initialize each system (use bound-derived radii)
     initBubblePool();
     initKelp();
     initFishPool();
-    
+
     initialized = true;
 }
 
@@ -179,9 +196,9 @@ function spawnBubble() {
     const bubble = bubblePool.find(b => !b.userData.active);
     if (!bubble) return;  // Pool exhausted
     
-    // Random position near arena edges (avoid center safe zone)
+    // Random position in outer band (scaled to arena bound)
     const angle = Math.random() * Math.PI * 2;
-    const radius = cfg.spawnRadius.min + Math.random() * (cfg.spawnRadius.max - cfg.spawnRadius.min);
+    const radius = bubbleSpawnRadiusMin + Math.random() * (bubbleSpawnRadiusMax - bubbleSpawnRadiusMin);
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;
     const y = 0.1;  // Start near ground
@@ -222,10 +239,9 @@ function initKelp() {
         // Add some randomness to placement
         const angleOffset = (Math.random() - 0.5) * (Math.PI * 2 / cfg.countPerArena) * 0.5;
         const finalAngle = angle + angleOffset;
-        
-        const radius = cfg.placementRadius.min + 
-            Math.random() * (cfg.placementRadius.max - cfg.placementRadius.min);
-        
+
+        const radius = kelpRadiusMin + Math.random() * (kelpRadiusMax - kelpRadiusMin);
+
         const kelp = createKelpMesh(cfg);
         kelp.position.set(
             Math.cos(finalAngle) * radius,
@@ -317,10 +333,9 @@ function initFishPool() {
         });
         const fish = new THREE.Mesh(fishGeometry, mat);
         
-        // Position beyond arena walls (distant background)
+        // Position beyond arena walls (scaled to arena bound)
         const angle = Math.random() * Math.PI * 2;
-        const radius = cfg.distanceRadius.min + 
-            Math.random() * (cfg.distanceRadius.max - cfg.distanceRadius.min);
+        const radius = fishDistanceMin + Math.random() * (fishDistanceMax - fishDistanceMin);
         const height = cfg.height.min + Math.random() * (cfg.height.max - cfg.height.min);
         
         fish.position.set(

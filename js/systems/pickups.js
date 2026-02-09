@@ -11,6 +11,7 @@ import { showModuleUnlockBanner, showUnlockNotification } from '../ui/hud.js';
 import { PulseMusic } from './pulseMusic.js';
 import { ITEM_CONFIG, PROJECTILE_ITEMS, getActiveCombination } from '../config/items.js';
 import { log } from './debugLog.js';
+import { setEmissiveIntensity } from './materialUtils.js';
 
 // Get the surface height at a given X/Z position (checks platforms/obstacles)
 function getSurfaceHeight(x, z) {
@@ -154,8 +155,8 @@ export function updateXpGems(delta) {
         // Treasure reward orb pulsing animation
         if (gem.isTreasureReward && gem.material) {
             gem.pulseTimer = (gem.pulseTimer || 0) + 1;
-            const pulse = 0.8 + Math.sin(gem.pulseTimer * 0.1) * 0.2; // Pulsing emissive
-            gem.material.emissiveIntensity = pulse;
+            const pulse = 0.8 + Math.sin(gem.pulseTimer * 0.1) * 0.2; // Pulsing emissive base
+            setEmissiveIntensity(gem.material, pulse);
             // Slight scale pulse for extra visibility
             const scalePulse = 1.0 + Math.sin(gem.pulseTimer * 0.1) * 0.1;
             gem.scale.setScalar(scalePulse);
@@ -842,7 +843,7 @@ export function updateModulePickups() {
         pickup.position.y = 1.5 + Math.sin(time * 2) * 0.3;
         
         // Emissive pulse
-        pickup.orb.material.emissiveIntensity = 0.3 + Math.sin(time * 4) * 0.2;
+        setEmissiveIntensity(pickup.orb.material, 0.3 + Math.sin(time * 4) * 0.2);
         
         // Check player collection
         if (player && player.position) {
