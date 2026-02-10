@@ -4,7 +4,7 @@ import { keys, cameraAngleX, cameraAngleY } from '../core/input.js';
 import { obstacles, hazardZones, enemies, getCurrentBoss, tempVec3, tempVec3_2, tempVec3_3, tempVec3_4, tempVec3_5 } from '../core/entities.js';
 import { PLAYER_JUMP_VELOCITY, PLAYER_GRAVITY, BOUNCE_FACTORS, STOMP_BOUNCE_VELOCITY, STOMP_PUSH_SPEED, TRAIL_SPAWN_DISTANCE, WAVE_STATE } from '../config/constants.js';
 import { TUNING } from '../config/tuning.js';
-import { getArenaBounds, getSpeedBowlsForArena, getBowlSurfaceYAt } from '../config/arenas.js';
+import { getArenaBounds, getSpeedBowlsForArena, getBowlSurfaceYAt, BOWL_PULL_STRENGTH } from '../config/arenas.js';
 import { spawnParticle } from '../effects/particles.js';
 import { spawnTrail, lastTrailPos, setLastTrailPos } from '../effects/trail.js';
 import { takeDamage } from '../systems/damage.js';
@@ -613,7 +613,7 @@ export function updatePlayer(delta) {
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist < b.R) {
             insideBowlIndex = i;
-            const pullStrength = 0.02 * (1 - dist / b.R);
+            const pullStrength = BOWL_PULL_STRENGTH * (1 - dist / b.R);
             tempVec3.set(dx, 0, dz).normalize().multiplyScalar(pullStrength);
             player.position.add(tempVec3);
         }
@@ -625,6 +625,13 @@ export function updatePlayer(delta) {
         const mag = b.exitBoostMagnitude ?? 0.12;
         player.velocity.x += tempVec3.x * mag;
         player.velocity.z += tempVec3.z * mag;
+        // Directional exit burst (outward = "launch"); palette 0x44aaff to match movement trail
+        const bowlExitColor = 0x44aaff;
+        for (let i = 0; i < 8; i++) {
+            const offset = tempVec3.clone().multiplyScalar(i * 0.4);
+            spawnParticle(player.position.clone().add(offset), bowlExitColor, 1);
+        }
+        // TODO: bowl exit SFX via centralized event (PulseMusic / SFX module)
     }
 
     // Hit recovery (invulnerability frames) - flash animation

@@ -78,7 +78,7 @@ export function spawn(type, x, z, opts = {}) {
     if (type === 'landmark') {
         const typeId = opts.typeId || opts.variant || 'decal';
         if (typeId === 'resetPad') {
-            const radius = opts.radius ?? 12;
+            const radius = opts.radius ?? 10;  // Center decal radius (distinct from bowl mesh radius 12)
             const mesh = new THREE.Mesh(
                 new THREE.CircleGeometry(radius, 32),
                 new THREE.MeshBasicMaterial({
